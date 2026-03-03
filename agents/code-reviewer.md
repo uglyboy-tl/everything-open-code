@@ -58,6 +58,7 @@ mode: subagent
 
 ```
 ## 审查结果
+**审批结果: [Approve/Warning/Block]**
 
 ### Critical 问题（必须修复）
 [问题描述]
