@@ -7,7 +7,7 @@ model: deepseek/deepseek-chat
 按以下步骤执行合并流程：
 
 1. **验证环境并获取信息**：
-   - 并行执行：`git status --porcelain`、`git rev-parse --abbrev-ref HEAD`、`git worktree list`、`pwd`
+   - 并行执行：`git status --porcelain`、`git rev-parse --abbrev-ref HEAD`、`git worktree list`、`pwd`、`git merge-base develop HEAD`
    - 验证不在主分支（main/master/develop）且当前目录在主仓库的 `.worktrees/` 子目录下，否则停止
    - 若工作区有未提交更改，立即调用内置命令 `/commit` 提交（该命令会自动调用 git-commiter subagent 执行）
 
@@ -19,7 +19,7 @@ model: deepseek/deepseek-chat
    - 如果 develop 分支跟踪远程，则执行 `git pull origin develop`
 
 3. **代码审查**：
-   - 使用内置命令 `/review develop..HEAD` 对待合并的功能进行 review（该命令会自动调用 code-reviewer subagent 执行）
+   - 使用内置命令 `/review <merge-base>..HEAD` 对待合并的功能进行 review（该命令会自动调用 code-reviewer subagent 执行），其中 `<merge-base>` 是步骤1中获取的 merge base commit hash
    - **Review 结果判定**：
      - **Approve** 或 **Warning** → 继续合并，但提供相关提示信息
      - **Block** → 停止合并，向用户说明情况并提供修复建议
