@@ -1,6 +1,7 @@
 ---
 description: 将 develop 分支的内容合并到主干分支并清理相关功能分支
 agent: worker
+model: deepseek/deepseek-chat
 ---
 
 按以下步骤执行发布流程：
@@ -30,7 +31,7 @@ agent: worker
    - 有可发布的提交（如无，询问用户是否继续）
 
 2. **合并 develop 到主干**：
-   - 执行 `git merge --no-ff develop`
+   - 执行 `git merge --no-ff -m "merge(develop): 合并到主分支" develop`
    - 冲突检测：如果合并失败或有冲突，向用户说明情况并提供解决建议
 
 3. **变基 develop 分支到主干**：
@@ -40,11 +41,11 @@ agent: worker
    - 基于第一步收集的提交列表和标签列表，自动递增语义版本号（修复→修订号，新增功能→次版本号，重大变更→主版本号）
    - 执行 `git tag <新版本标签>`
 
-4. **推送更改**：
+5. **推送更改**：
    - 推送主干分支：`git push origin HEAD`
    - 推送标签：`git push origin <标签名>`
 
-5. **清理已合并功能分支**：
+6. **清理已合并功能分支**：
    - 使用第一步收集的已合并分支列表，过滤掉主干和 develop 分支
    - 对每个功能分支：删除本地 worktree 目录和对应分支（从第一步的 worktree 列表匹配）
    - 推送 develop 分支的清理：`git push origin develop --prune`
