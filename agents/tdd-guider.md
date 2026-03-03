@@ -2,6 +2,7 @@
 description: 在编写实现代码之前，先编写测试，观察测试失败，然后编写最小化代码通过测试。
 mode: subagent
 temperature: 0.1
+color: "#4F46E5"
 ---
 
 # 测试驱动开发（TDD）专家

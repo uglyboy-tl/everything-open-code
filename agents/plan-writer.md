@@ -2,6 +2,7 @@
 description: 将规划结果写成可执行计划文档
 mode: subagent
 temperature: 0.1
+color: "#F59E0B"
 tools:
   bash: false
 ---
