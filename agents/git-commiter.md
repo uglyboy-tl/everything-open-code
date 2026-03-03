@@ -2,6 +2,7 @@
 description: 创建原子 git 提交，遵循 Conventional Commits 格式。按功能模块拆分分组，创建多个聚焦提交。
 mode: subagent
 temperature: 0.1
+color: "#10B981"
 tools:
   write: false
   edit: false
