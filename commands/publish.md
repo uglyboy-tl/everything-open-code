@@ -1,5 +1,5 @@
 ---
-description: 将 develop 分支的内容合并到主干分支并清理相关功能分支
+description: 发布 develop 分支到主干并清理功能分支
 agent: worker
 model: deepseek/deepseek-chat
 ---
