@@ -1,6 +1,7 @@
 ---
-description: 将当前功能分支合并到开发分支并集成到主干
+description: 将当前功能分支合并到开发分支
 agent: worker
+model: deepseek/deepseek-chat
 ---
 
 按以下步骤执行合并流程：
@@ -17,11 +18,17 @@ agent: worker
    - 切换到 develop worktree
    - 如果 develop 分支跟踪远程，则执行 `git pull origin develop`
 
-3. **合并功能分支**：
-   - 执行 `git merge --no-ff <功能分支名>`（使用步骤1获取的当前分支名）
+3. **代码审查**：
+   - 使用内置命令 `/review develop..HEAD` 对待合并的功能进行 review（该命令会自动调用 code-reviewer subagent 执行）
+   - **Review 结果判定**：
+     - **Approve** 或 **Warning** → 继续合并，但提供相关提示信息
+     - **Block** → 停止合并，向用户说明情况并提供修复建议
+
+4. **合并功能分支**：
+   - 执行 `git merge --no-ff -m "merge(<功能分支名>): 合并到 develop" <功能分支名>`（使用步骤1获取的当前分支名，确保分支名不包含特殊字符如引号、换行符等）
    - **冲突检测**：如果合并失败或有冲突，向用户说明情况并提供解决建议
 
-4. **运行集成测试**：
+5. **运行集成测试**：
    - 如果项目是代码开发项目且分支功能与代码相关，则执行完整测试套件
       - 参考 AGENTS.md 的项目指导中的具体测试方式
    - 如果项目非代码开发或分支功能与代码无关，跳过测试步骤
