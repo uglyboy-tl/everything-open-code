@@ -10,7 +10,7 @@ model: deepseek/deepseek-chat
    ```bash
    # 同步分支
    git pull
-   git fetch origin develop:develop
+   git fetch origin develop
 
    # 验证环境：检查是否在主仓库目录、主干分支无修改、develop分支存在
    git worktree list  # 第一行为主仓库路径，用于验证当前目录
