@@ -82,6 +82,8 @@ project=$(basename "$(git rev-parse --show-toplevel)")
 
 ### 2. 创建工作区
 
+**分支命名规范：** 分支名必须遵循约定格式，如 `fix/*`、`feature/*`、`hotfix/*` 等。
+
 ```bash
 # 确定完整路径
 case $LOCATION in
@@ -93,8 +95,15 @@ case $LOCATION in
     ;;
 esac
 
+# 确定基础分支（优先使用 develop，如果不存在则使用空字符串让 Git 自动选择）
+base_branch=""
+if git show-ref --verify --quiet refs/heads/develop; then
+  base_branch="develop"
+fi
+
 # 创建带新分支的工作区
-git worktree add "$path" -b "$BRANCH_NAME"
+# 分支名必须符合规范：fix/*、feature/*、hotfix/* 等
+git worktree add "$path" -b "$BRANCH_NAME" $base_branch
 cd "$path"
 ```
 
@@ -186,7 +195,7 @@ go test ./...
 
 [检查 .worktrees/ - 存在]
 [验证已忽略 - git check-ignore 确认 .worktrees/ 已被忽略]
-[创建工作区：git worktree add .worktrees/auth -b feature/auth]
+[创建工作区：git worktree add .worktrees/feature/auth -b feature/auth develop]
 [运行 npm install]
 [运行 npm test - 47 个通过]
 
