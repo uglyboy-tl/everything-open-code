@@ -6,6 +6,18 @@ color: "#10B981"
 tools:
   write: false
   edit: false
+  question: false
+permission:
+  "*": deny
+  read: allow
+  glob: allow
+  grep: allow
+  list: allow
+  bash:
+    "*": deny
+    "git *": allow
+    "rg *": allow
+  webfetch: deny
 ---
 
 # Git 提交专家
