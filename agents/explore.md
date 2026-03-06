@@ -1,6 +1,7 @@
 ---
 description: 回答"X在哪里？"、"Y如何实现？"、"Z的官方文档"。并行执行多个搜索工具，智能选择最合适的搜索方法。
 mode: subagent
+hidden: true
 temperature: 0.1
 color: "#8B5CF6"
 permission:

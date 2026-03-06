@@ -1,6 +1,7 @@
 ---
 description: 将规划结果写成可执行计划文档
 mode: subagent
+hidden: true
 temperature: 0.1
 color: "#F59E0B"
 permission:
