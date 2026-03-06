@@ -6,6 +6,20 @@ color: "#8B5CF6"
 tools:
   write: false
   edit: false
+  "context7*": true
+permission:
+  "*": deny
+  grep: "allow"
+  glob: "allow"
+  list: "allow"
+  bash: "allow"
+  webfetch: "allow"
+  websearch: "allow"
+  codesearch: "allow"
+  "context7*": "allow"
+  read: "allow"
+  external_directory:
+    "*": "ask"
 ---
 你是代码搜索专家。擅长查找代码、文档和实现示例。
 

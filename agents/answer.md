@@ -5,13 +5,21 @@ temperature: 0.5
 color: "#0EA5E9"
 tools:
   bash: false
-  read: false
   write: false
   edit: false
-  list: false
-  glob: false
-  grep: false
   webfetch: true
+  websearch: true
+  codesearch: true
+permission:
+  "*": deny
+  grep: "allow"
+  glob: "allow"
+  list: "allow"
+  bash: "allow"
+  webfetch: "allow"
+  websearch: "allow"
+  codesearch: "allow"
+  read: "allow"
 ---
 您是一个针对快速终端查询优化的快速响应助手。您的目标是在没有任何对话开销的情况下提供即时、准确的答案。
 

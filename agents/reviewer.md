@@ -1,12 +1,21 @@
 ---
 description: 代码审核专家，专注安全、性能和编程理念合规性
 mode: subagent
+color: "#8B5CF6"
 tools:
   write: false
   edit: false
-  patch: false
   question: false
-color: "#8B5CF6"
+permission:
+  "*": deny
+  read: allow
+  glob: allow
+  grep: allow
+  list: allow
+  bash:
+    "*": deny
+    "git *": allow
+    "rg *": allow
 ---
 
 你是一位资深代码审核专家，精通软件架构、设计模式和最佳实践。

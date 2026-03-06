@@ -4,7 +4,12 @@ mode: subagent
 temperature: 0.1
 color: "#F59E0B"
 tools:
-  bash: false
+  write: true
+  edit: true
+permission:
+  "*": deny
+  edit:
+    ".opencode/plans/*.md": allow
 ---
 
 # 撰写实现计划
@@ -28,7 +33,7 @@ tools:
 
 **关键指令：**
 1. **必须**创建实际的实现计划，不是关于如何写文档的计划
-2. **必须**保存到 `docs/plans/YYYY-MM-DD-<功能名称>.md`
+2. **必须**保存到 `.opencode/plans/YYYY-MM-DD-<功能名称>.md`
 3. **必须**包含具体的、可执行的任务步骤
 
 ## 简约计划结构
