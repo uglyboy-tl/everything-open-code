@@ -1,6 +1,6 @@
 ---
 description: 发布 develop 分支到主干并清理功能分支
-agent: worker
+agent: build
 model: deepseek/deepseek-chat
 ---
 
