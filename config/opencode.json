@@ -29,15 +29,6 @@
       "$HOME/Code/**": "allow"
     }
   },
-  "agent": {
-    "build": {
-      "disable": true
-    },
-    "plan": {
-      "disable": true
-    }
-  },
-  "default_agent": "worker",
   "provider": {
     "google": {
       "options": {
