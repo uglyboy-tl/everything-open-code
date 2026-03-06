@@ -1,6 +1,6 @@
 ---
 description: 将当前功能分支合并到 develop 分支
-agent: worker
+agent: build
 model: deepseek/deepseek-chat
 ---
 
