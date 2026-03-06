@@ -18,8 +18,8 @@ model: deepseek/deepseek-chat
    - 切换到 develop worktree
    - 如果 develop 分支跟踪远程，则执行 `git pull origin develop`
 
-3. **代码审查**：
-   - 使用内置命令 `/review <merge-base>..HEAD` 对待合并的功能进行 review（该命令会自动调用 code-reviewer subagent 执行），其中 `<merge-base>` 是步骤1中获取的 merge base commit hash
+3. **代码审核**：
+   - 使用内置命令 `/review <merge-base>..HEAD` 对待合并的功能进行 review（该命令会自动调用 reviewer subagent 执行），其中 `<merge-base>` 是步骤1中获取的 merge base commit hash
    - **Review 结果判定**：
      - **Approve** 或 **Warning** → 继续合并，但提供相关提示信息
      - **Block** → 停止合并，向用户说明情况并提供修复建议
