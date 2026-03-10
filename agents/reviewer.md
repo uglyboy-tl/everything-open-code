@@ -1,6 +1,7 @@
 ---
 description: 代码审核专家，专注安全、性能和编程理念合规性
 mode: subagent
+hidden: true
 color: "#8B5CF6"
 permission:
   "*": deny
