@@ -1,7 +1,6 @@
 ---
 name: retrieve
-description: 需要语义化搜索、理解技术概念、查找技术文档、进行技术调研或获取代码示例时使用。通过语义搜索理解查询意图而非仅关键词匹配，支持概念性查询、快速事实查找、深度研究、公司人物调研。也可补充使用特定领域资源（如 GitHub Issues 调试错误、Stack Overflow 代码示例、Hacker News 技术趋势）。当用户需要理解技术概念、查找最佳实践、进行技术选型、调试错误、或进行技术调研时激活。
-license: MIT
+description: 当需要网络搜索时使用。适用于：实时信息、事实性查询、本地代码库无法解答的问题、技术文档、调试错误、技术调研。
 ---
 
 # 信息检索
@@ -32,7 +31,7 @@ license: MIT
 
 ## Exa AI（首选）
 ```bash
-./skills/retrieve/scripts/retrieve exa [-t TYPE] [-c CATEGORY] "query"
+scripts/retrieve exa [-t TYPE] [-c CATEGORY] "query"
 ```
 
 **搜索类型：** `neural`(语义,推荐) | `keyword`(精确) | `fast`(快速) | `deep`(深度)
@@ -42,7 +41,7 @@ license: MIT
 ## GitHub Issues
 **适用场景：** 项目级错误调试、已知 issue 查找、版本兼容问题。
 ```bash
-./skills/retrieve/scripts/retrieve github [--repo OWNER/REPO] [--exact MSG] [--version V] [--closed] "query"
+scripts/retrieve github [--repo OWNER/REPO] [--exact MSG] [--version V] [--closed] "query"
 ```
 
 **关键选项：**
@@ -53,7 +52,7 @@ license: MIT
 ## Stack Overflow
 **适用场景：** 编程问答、代码示例、语言/框架问题。
 ```bash
-./skills/retrieve/scripts/retrieve stackoverflow [-t TAGS] "query"
+scripts/retrieve stackoverflow [-t TAGS] "query"
 ```
 
 **选项：** `-t "tag1;tag2"` 按标签过滤
@@ -61,7 +60,7 @@ license: MIT
 ## Hacker News
 **适用场景：** 技术趋势、新工具发现、社区讨论。
 ```bash
-./skills/retrieve/scripts/retrieve hackernews [-t TAG] [-p PERIOD] "query"
+scripts/retrieve hackernews [-t TAG] [-p PERIOD] "query"
 ```
 
 **标签：** `story` | `show_hn` | `ask_hn` | `comment`
@@ -69,7 +68,7 @@ license: MIT
 
 ## 网页获取
 ```bash
-./skills/retrieve/scripts/retrieve fetch URL
+scripts/retrieve fetch URL
 ```
 **用途：** 获取搜索结果中的具体页面内容。所有搜索命令返回 URL 列表，需用此命令获取全文。
 
