@@ -1,0 +1,1080 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_NAME="Retrieve"
+string.base64.encode(){ base64 -w 0 "$1" 2>/dev/null||base64 "$1" 2>/dev/null;}
+string.base64.decode(){ base64 -d 2>/dev/null||base64 -D 2>/dev/null;}
+string.escape.regex(){ printf '%s' "${1:-}"|sed 's/[].[\\^$*+?{}()|]/\\&/g; s/\//\\\//g';}
+string.escape.sed(){ printf '%s' "${1:-}"|sed 's/\\/\\\\/g; s/&/\\&/g; s/|/\\|/g';}
+string.trim(){
+local s="${1#"${1%%[![:space:]]*}"}"
+echo "${s%"${s##*[![:space:]]}"}"
+}
+string.int.check(){ [[ $1 =~ ^-?[0-9]+$ ]];}
+string.natural.check(){ [[ $1 =~ ^[1-9][0-9]*$ ]];}
+string.float.check(){ [[ $1 =~ ^-?[0-9]+\.[0-9]+$ ]];}
+string.is_ascii(){ [[ $1 != *[![:ascii:]]* ]];}
+string.has_ansi(){ [[ $1 == *$'\x1b'* ]];}
+array.len(){
+local -n ref="$1"
+echo "${#ref[@]}"
+}
+array.contains(){
+local -n ref="$1"
+if ((${#ref[@]}<=3));then
+[[ " ${ref[*]} " == *" $2 "* ]]
+else
+local -A lookup=()
+for elem in "${ref[@]}";do
+lookup["$elem"]=1
+done
+[[ -v "lookup[$2]" ]]
+fi
+}
+array.append(){
+local -n array_ref="$1"
+shift
+array_ref+=("$@")
+}
+array.get(){
+local -n ref="$1"
+local len=${#ref[@]}
+(($2>=0&&$2<len))&&echo "${ref[$2]}"||return 1
+}
+array.type(){
+local -r arr="$1"
+local decl
+decl="$(declare -p "$arr" 2>/dev/null)"||return 1
+case "$decl" in
+"declare -A"*)echo "associative";;
+"declare -a"*)echo "indexed";;
+*)return 1
+esac
+}
+array.has_duplicates(){
+local -n ref="$1"
+local -A seen=()
+local elem key
+for elem in "${ref[@]}";do
+key="${elem:-__EMPTY__}"
+[[ -v "seen[$key]" ]]&&return 0
+seen["$key"]=1
+done
+return 1
+}
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${SCRIPT_NAME:=}"
+_PATH_LOCAL_DIR="local"
+path.script_name(){
+echo "${SCRIPT_NAME,,}"
+}
+path.config_dir(){
+: "${SCRIPT_CONFIG_DIR:=$XDG_CONFIG_HOME/$(path.script_name)}"
+echo "$SCRIPT_CONFIG_DIR"
+}
+path.data_dir(){
+: "${SCRIPT_DATA_DIR:=$XDG_DATA_HOME/$(path.script_name)}"
+echo "$SCRIPT_DATA_DIR"
+}
+path.state_dir(){
+: "${SCRIPT_STATE_DIR:=$XDG_STATE_HOME/$(path.script_name)}"
+echo "$SCRIPT_STATE_DIR"
+}
+path.cache_dir(){
+: "${SCRIPT_CACHE_DIR:=$XDG_CACHE_HOME/$(path.script_name)}"
+echo "$SCRIPT_CACHE_DIR"
+}
+path.log_dir(){
+: "${SCRIPT_LOG_DIR:=$(path.state_dir)/logs}"
+echo "$SCRIPT_LOG_DIR"
+}
+path.local_config_dir(){
+: "${SCRIPT_LOCAL_CONFIG_DIR:=$XDG_CONFIG_HOME/$_PATH_LOCAL_DIR}"
+echo "$SCRIPT_LOCAL_CONFIG_DIR"
+}
+system.command.exist(){ command -v "$1" >/dev/null 2>&1;}
+system.command.required(){ ! system.command.exist "$1"&&log.error "This module required \`$1\` command."&&exit 1||return 0;}
+system.command.result(){
+local result
+result=$(eval "$1" 2>&1)||{
+local exit_code=$?
+if [[ $exit_code -eq 1 ]]&&[[ $1 == *grep* ]];then
+result=""
+else
+result="（命令执行失败，退出码: $exit_code）"
+fi
+}
+[[ -z $result ]]&&result="（无输出）"
+echo "$result"
+}
+system.os(){
+[[ -n ${_SYSTEM_OS+x} ]]&&echo "$_SYSTEM_OS"&&return 0
+case "$OSTYPE" in
+darwin*)echo "macos";;
+linux*)echo "linux";;
+msys*|cygwin*)echo "windows";;
+bsd*)echo "bsd";;
+solaris*)echo "solaris";;
+*)echo"unknown"
+esac
+}
+_SYSTEM_OS="$(system.os)"
+system.arch(){
+[[ -n ${_SYSTEM_ARCH+x} ]]&&echo "$_SYSTEM_ARCH"&&return 0
+local -r arch="$(uname -m)"
+case "$arch" in
+x86_64|x64|amd64)echo "amd64";;
+aarch64|arm64)echo "arm64";;
+armv7l|armhf)echo "armhf";;
+i686|i386|i586)echo "i386"
+esac
+}
+_SYSTEM_ARCH="$(system.arch)"
+pass.get(){
+[[ -z $1 || $1 == */* || $1 == *..* ]]&&return 1
+local filename="$(path.config_dir)/$1.gpg"
+[[ -f $filename ]]||filename="$(path.local_config_dir)/$1.gpg"
+[[ -f $filename ]]&&system.command.exist "gpg"||return 1
+gpg -dq "$filename" 2>/dev/null
+}
+ANSI_ESC=$'\033'
+ANSI_CSI="$ANSI_ESC["
+ansi.Color.IsAvailable(){
+local colors
+colors=$(tput colors 2>/dev/null||echo 0)
+[[ $colors -ge 16 ]]&&[[ -t 1 ]]
+}
+ansi.Powerline.IsAvailable(){
+[[ -z ${NO_UNICODE-} ]]&&locale -k LC_CTYPE 2>/dev/null|grep -q 'UTF-8'
+}
+ansi.enable.color(){
+BLACK="${ANSI_CSI}30m"
+RED="${ANSI_CSI}31m"
+GREEN="${ANSI_CSI}32m"
+YELLOW="${ANSI_CSI}33m"
+BLUE="${ANSI_CSI}34m"
+MAGENTA="${ANSI_CSI}35m"
+CYAN="${ANSI_CSI}36m"
+WHITE="${ANSI_CSI}37m"
+BRIGHT_BLACK="${ANSI_CSI}90m"
+BRIGHT_RED="${ANSI_CSI}91m"
+BRIGHT_GREEN="${ANSI_CSI}92m"
+BRIGHT_YELLOW="${ANSI_CSI}93m"
+BRIGHT_BLUE="${ANSI_CSI}94m"
+BRIGHT_MAGENTA="${ANSI_CSI}95m"
+BRIGHT_CYAN="${ANSI_CSI}96m"
+BRIGHT_WHITE="${ANSI_CSI}97m"
+NC="${ANSI_CSI}0m"
+NO_COLOR="${ANSI_CSI}0m"
+}
+ansi.disable.color(){
+BLACK=""
+RED=""
+GREEN=""
+YELLOW=""
+BLUE=""
+MAGENTA=""
+CYAN=""
+WHITE=""
+BRIGHT_BLACK=""
+BRIGHT_RED=""
+BRIGHT_GREEN=""
+BRIGHT_YELLOW=""
+BRIGHT_BLUE=""
+BRIGHT_MAGENTA=""
+BRIGHT_CYAN=""
+BRIGHT_WHITE=""
+NC=""
+NO_COLOR=""
+}
+ansi.enable.style(){
+Bold="${ANSI_CSI}1m"
+Dim="${ANSI_CSI}2m"
+Italics="${ANSI_CSI}3m"
+Underline="${ANSI_CSI}4m"
+Blink="${ANSI_CSI}5m"
+Reverse="${ANSI_CSI}7m"
+Hidden="${ANSI_CSI}8m"
+Strike="${ANSI_CSI}9m"
+NoBold="${ANSI_CSI}21m"
+NoDim="${ANSI_CSI}22m"
+NoItalics="${ANSI_CSI}23m"
+NoUnderline="${ANSI_CSI}24m"
+NoBlink="${ANSI_CSI}25m"
+NoReverse="${ANSI_CSI}27m"
+NoHidden="${ANSI_CSI}28m"
+NoStrike="${ANSI_CSI}29m"
+}
+ansi.disable.style(){
+Bold=""
+Dim=""
+Italics=""
+Underline=""
+Blink=""
+Reverse=""
+Hidden=""
+Strike=""
+NoBold=""
+NoDim=""
+NoItalics=""
+NoUnderline=""
+NoBlink=""
+NoReverse=""
+NoHidden=""
+NoStrike=""
+}
+ansi.enable.powerline(){
+POWERLINE_SEPARATOR=$'\ue0b0'
+POWERLINE_SEPARATOR_THIN=$'\ue0b1'
+POWERLINE_SEPARATOR_LEFT=$'\ue0b2'
+POWERLINE_SEPARATOR_LEFT_THIN=$'\ue0b3'
+POWERLINE_BRANCH=$'\ue0a0'
+POWERLINE_LINE=$'\ue0a1'
+POWERLINE_READONLY=$'\ue0a2'
+POWERLINE_POINTING_ARROW=$'\u27a1'
+POWERLINE_ARROW_RIGHT=$'\u25b6'
+POWERLINE_ARROW_LEFT=$'\u25c0'
+POWERLINE_ARROW_DOWN=$'\u2b07'
+POWERLINE_ARROW_RIGHT_DOWN=$'\u2b0a'
+POWERLINE_PLUS_MINUS=$'\u00b1'
+POWERLINE_REFERS_TO=$'\u27a6'
+POWERLINE_OK=$'\u2714'
+POWERLINE_FAIL=$'\u2718'
+POWERLINE_WARN=$'\u26a0'
+POWERLINE_COG=$'\u2699'
+POWERLINE_HEART=$'\u2764'
+POWERLINE_STAR=$'\u2605'
+}
+ansi.disable.powerline(){
+POWERLINE_SEPARATOR=">"
+POWERLINE_SEPARATOR_THIN=">"
+POWERLINE_SEPARATOR_LEFT="<"
+POWERLINE_SEPARATOR_LEFT_THIN="<"
+POWERLINE_BRANCH="|}"
+POWERLINE_LINE="LN"
+POWERLINE_READONLY="RO"
+POWERLINE_POINTING_ARROW="~"
+POWERLINE_ARROW_RIGHT="->"
+POWERLINE_ARROW_LEFT="<-"
+POWERLINE_ARROW_DOWN="_"
+POWERLINE_ARROW_RIGHT_DOWN=">"
+POWERLINE_PLUS_MINUS="+-"
+POWERLINE_REFERS_TO="*"
+POWERLINE_OK="+"
+POWERLINE_FAIL="x"
+POWERLINE_WARN="!"
+POWERLINE_COG="{*}"
+POWERLINE_HEART="<3"
+POWERLINE_STAR="*"
+}
+ansi.enable(){
+[[ -n ${_ANSI_FORCE_DISABLE-} ]]&&ansi.disable&&return 0
+ansi.Color.IsAvailable&&ansi.enable.color&&ansi.enable.style||{ ansi.disable.color&&ansi.disable.style;}
+ansi.Powerline.IsAvailable&&ansi.enable.powerline||ansi.disable.powerline
+}
+ansi.disable(){
+ansi.disable.color
+ansi.disable.style
+ansi.disable.powerline
+}
+ansi.is.initialized(){
+[[ -n $ANSI_ESC ]]
+}
+ansi.enable
+console.stdout(){ printf "%s\n" "$*";}
+console.stderr(){ printf "%s\n" "$*" >&2;}
+console.repeat(){
+local repeat=${2:-0}
+((repeat<=0))&&return
+local char="$1"
+if [[ ${#char} -eq 1 ]];then
+printf "%*s" "$repeat" ""|tr ' ' "$char"
+else
+local result=""
+for ((i=0; i<repeat; i++));do
+result+="$char"
+done
+printf "%s" "$result"
+fi
+}
+UNDERLINE_CACHE=$(console.repeat "=" 20)
+console.align(){
+local padding=$(($1-$(console.display_width "$2")))
+((padding>0))&&printf "%s%${padding}s%s\n" "$2" "" "${*:3}"||printf "%s%s\n" "$2" "${*:3}"
+}
+console.indent(){ console.align $(($1*2)) "" "${*:2}";}
+console.ansi_width(){
+local width=0 i=0 len=${#1} flag=0
+while ((i<len));do
+local char="${1:$((i++)):1}"
+((flag))&&{
+[[ $char =~ [a-zA-Z] ]]&&flag=0
+continue
+}
+[[ $char == $'\x1b' ]]&&flag=1&&continue
+((width++))
+done
+echo "$width"
+}
+console.mixed_width(){
+local width=0 flag=0 i=0
+local hex_bytes=$(printf "%s" "$1"|od -An -tx1 -v|tr -d ' \n')
+local len=${#hex_bytes}
+while ((i<len));do
+local num=$((0x${hex_bytes:i:2}))
+i=$((i+2))
+((flag))&&{
+(((num>=0x41&&num<=0x5A)||(num>=0x61&&num<=0x7A)))&&flag=0
+continue
+}
+((num==0x1b))&&{
+flag=1
+continue
+}
+((num<=0x7F))&&{
+((width++))
+continue
+}
+((num>=0xC2&&num<=0xDF))&&{
+((width++))
+i=$((i+2))
+continue
+}
+((num>=0xE0&&num<=0xEF))&&{
+((width+=2))
+i=$((i+4))
+continue
+}
+((num>=0xF0&&num<=0xF7))&&{
+((width+=2))
+i=$((i+6))
+}
+done
+echo "$width"
+}
+console.display_width(){
+[[ $1 ]]||{
+echo "0"
+return
+}
+! string.is_ascii "$1"&&console.mixed_width "$1"&&return
+string.has_ansi "$1"&&console.ansi_width "$1"||echo "${#1}"
+}
+console.section(){
+console.stdout "$1:"
+console.stdout "=${UNDERLINE_CACHE:0:$(console.mixed_width "$1")}"
+}
+console.item.title(){
+console.indent "$1" "${*:2}"
+_CONSOLE_INDENT_DEPTH=$(($1+1))
+}
+console.item.item(){
+console.indent "$_CONSOLE_INDENT_DEPTH" "$*"
+}
+console.item.mid(){
+console.item.item "├─" "$*"
+}
+console.item.end(){
+console.item.item "└─" "$*"
+echo ""
+}
+console.footer(){
+console.stdout "========="
+console.stdout "$*"
+}
+: "${_LOG_USE_EXTRA:=false}"
+: "${_LOG_LEVEL:=INFO}"
+declare -gA _LOG_LEVEL_MAP=(
+[DEBUG]=0 [INFO]=1 [WARN]=2 [ERROR]=3)
+declare -gi _LOG_MIN_LEVEL=${_LOG_LEVEL_MAP[$_LOG_LEVEL]}
+log.setLevel(){
+local -r level="${1^^}"
+[[ -v "_LOG_LEVEL_MAP[$level]" ]]||return 1
+export _LOG_MIN_LEVEL=${_LOG_LEVEL_MAP[$level]}
+export _LOG_LEVEL="$level"
+}
+log(){
+local -r level="${1^^}"
+local timestamp
+printf -v timestamp '%(%m-%d %H:%M:%S )T' -1
+local flag
+case "$level" in
+SUCCESS)flag="$GREEN[$level]$NC";;
+INFO)flag="$BLUE[$level]$NC";;
+WARN)flag="$YELLOW[$level]$NC";;
+ERROR)flag="$RED[$level]$NC";;
+DEBUG)flag="$WHITE[$level]$NC";;
+*)flag=""
+esac
+[[ -z $flag ]]||shift
+local prefix extra=""
+[[ $_LOG_USE_EXTRA == true ]]&&extra="${BASH_SOURCE[2]##*/}:${BASH_LINENO[0]}"
+[[ -z $extra ]]||extra="$WHITE($extra)$NC"
+prefix="$WHITE$timestamp$NC$flag$extra"
+console.stderr "$prefix" "$@"
+}
+log.debug(){ ((0>=_LOG_MIN_LEVEL))&&log debug "$@"||true;}
+log.info(){ ((1>=_LOG_MIN_LEVEL))&&log info "$@"||true;}
+log.success(){ ((1>=_LOG_MIN_LEVEL))&&log success "$@"||true;}
+log.warn(){ ((2>=_LOG_MIN_LEVEL))&&log warn "$@"||true;}
+log.error(){ ((3>=_LOG_MIN_LEVEL))&&log error "$@"||true;}
+map.len(){
+local -n ref="$1"
+echo "${#ref[@]}"
+}
+map.contains(){
+local -n ref="$1"
+[[ -v "ref[$2]" ]]
+}
+map.get(){
+local -n ref="$1"
+[[ -v "ref[$2]" ]]&&echo "${ref[$2]}"||return 1
+}
+_USAGE_SCRIPT_FILENAME=${0##*/}
+_USAGE_SCRIPT_NAME=${SCRIPT_NAME:-$_USAGE_SCRIPT_FILENAME}
+_USAGE_SCRIPT_DESC=""
+usage.name.set(){ _USAGE_SCRIPT_NAME="$1";}
+usage.description.set(){ [[ -n $1 ]]&&_USAGE_SCRIPT_DESC="$1";}
+usage.title(){
+local _title="$_USAGE_SCRIPT_NAME"
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&_title="$_title - $_ARGS_CURRENT_SUBCOMMAND"
+[[ -n $_USAGE_SCRIPT_DESC ]]&&_title="$_title - $_USAGE_SCRIPT_DESC"
+console.stdout "$Bold$_title$NC"
+}
+usage.usage(){
+local _usage_line="${BRIGHT_BLUE}Usage:$NC $BRIGHT_CYAN$_USAGE_SCRIPT_FILENAME$NC"
+local subcommand="${_ARGS_CURRENT_SUBCOMMAND:-<subcommand>}"
+((${1:-0}))&&_usage_line="$_usage_line $BRIGHT_MAGENTA$subcommand$NC"
+((${2:-0}))&&_usage_line="$_usage_line $BRIGHT_YELLOW[OPTIONS]$NC"
+((${3:-0}))&&_usage_line="$_usage_line $BRIGHT_YELLOW[ARGUMENTS]$NC"
+console.stdout "$_usage_line"
+}
+usage.section(){
+echo ""
+console.stdout "$Bold$BRIGHT_BLUE$1$NC:"
+}
+usage.section.items(){
+local -n _items_ref="$1"
+local -a _keys=("${!_items_ref[@]}")
+local _max_width=20
+for _key in "${_keys[@]}";do
+((${#_key}>_max_width))&&_max_width=${#_key}
+done
+((_max_width+=4))
+for _key in "${_keys[@]}";do
+console.align "$_max_width" "  $BRIGHT_CYAN$_key$NC" "${_items_ref[$_key]}"
+done
+}
+usage.footer(){
+[[ ${#_ARGS_SUBCOMMANDS[@]} -eq 0 ]]&&return 0
+echo ""
+console.stdout "${BRIGHT_BLACK}Use '$BRIGHT_WHITE$_USAGE_SCRIPT_FILENAME <subcommand> --help$BRIGHT_BLACK' for subcommand help$NC"
+}
+usage.show(){
+local -n _opts_ref=$1
+local -n _args_ref=$2
+local -n _examples_ref=$3
+local -n _notices_ref=$4
+local -n _cmd_ref="_ARGS_CURRENT_SUBCOMMAND"
+local -n _cmd_desc_ref="_ARGS_SUBCOMMANDS_DESC"
+echo ""
+usage.title
+echo ""
+usage.usage $(($(map.len _cmd_desc_ref)>0)) $(($(map.len _opts_ref)>0)) $(($(map.len _args_ref)>0))
+[[ -z $_cmd_ref ]]&&[[ $(map.len _cmd_desc_ref) -gt 0 ]]&&usage.section "Commands"&&usage.section.items _cmd_desc_ref
+[[ $(map.len _opts_ref) -gt 0 ]]&&usage.section "Options"&&usage.section.items _opts_ref
+[[ $(map.len _args_ref) -gt 0 ]]&&usage.section "Arguments"&&usage.section.items _args_ref
+[[ $(map.len _examples_ref) -gt 0 ]]&&usage.section "Examples"&&usage.section.items _examples_ref
+[[ $(map.len _notices_ref) -gt 0 ]]&&usage.section "Notices"&&usage.section.items _notices_ref
+[[ -z $_cmd_ref ]]&&usage.footer||true
+}
+usage.version(){ console.stdout "$BRIGHT_CYAN$_USAGE_SCRIPT_NAME$NC version $BRIGHT_GREEN${VERSION:-null}$NC";}
+declare -gA _ARGS_SUBCOMMANDS=()
+declare -gA _ARGS_SUBCOMMANDS_DESC=()
+declare -ga _ARGS_OPTIONS=()
+declare -gA _ARGS_OPTIONS_SWITCH=()
+declare -gA _ARGS_OPTIONS_TYPE=()
+declare -g _ARGS_CURRENT_SUBCOMMAND=""
+declare -gA _ARGS_HELP_OPTIONS=()
+declare -gA _ARGS_HELP_ARGS=()
+declare -gA _ARGS_HELP_EXAMPLES=()
+declare -gA _ARGS_HELP_NOTICES=()
+args.name(){ usage.name.set "$1";}
+args.description(){ usage.description.set "$1"||return 1;}
+args.init(){
+_ARGS_OPTIONS=()
+declare -gA _ARGS_OPTIONS_SWITCH=()
+declare -gA _ARGS_OPTIONS_TYPE=()
+declare -gA _ARGS_HELP_OPTIONS=()
+declare -gA _ARGS_HELP_ARGS=()
+declare -gA _ARGS_HELP_EXAMPLES=()
+declare -gA _ARGS_HELP_NOTICES=()
+usage.description.set "${1:-}"||{ [[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&usage.description.set "${_ARGS_SUBCOMMANDS_DESC[$_ARGS_CURRENT_SUBCOMMAND]}";}
+args.add_options "help" "h" "显示帮助信息"
+}
+args.add_options(){
+local type="${4:-}" key subcommand
+: "${type:="NONE"}"
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&subcommand=" $_ARGS_CURRENT_SUBCOMMAND"||subcommand=""
+case ${1^^} in
+"ARG")[[ -n $2 ]]&&_ARGS_HELP_ARGS["$2"]="$3"&&_ARGS_OPTIONS_TYPE["$2"]="$type";;
+"EXAMPLE")_ARGS_HELP_EXAMPLES["$(basename "$0")$subcommand $2"]="$3";;
+"NOTICE")_ARGS_HELP_NOTICES+=(["$2"]="");;
+*)_ARGS_OPTIONS_TYPE["$1"]="$type"
+_ARGS_OPTIONS+=("$1")
+[[ -n $2 ]]&&{
+_ARGS_OPTIONS_SWITCH["$1"]="$2"
+_ARGS_OPTIONS_SWITCH["$2"]="$1"
+_ARGS_OPTIONS+=("$2")
+}
+key=""
+[[ -n $2 ]]&&key="-$2, "
+key+="--$1"
+[[ -n ${4+x} ]]&&key+=" $type"
+_ARGS_HELP_OPTIONS["$key"]="$3"
+esac
+}
+args.add_subcommand(){
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&return 0
+_ARGS_SUBCOMMANDS["$1"]="$3"
+_ARGS_SUBCOMMANDS_DESC["$1"]="$2"
+}
+args.dispatch(){
+local cmd="${1:-}"
+[[ -v "_ARGS_SUBCOMMANDS[$cmd]" ]]&&{
+local handler="${_ARGS_SUBCOMMANDS[$cmd]}"
+_ARGS_CURRENT_SUBCOMMAND="$cmd"
+shift
+"$handler" "$@"
+exit $?
+}
+return 1
+}
+args.process(){
+[[ -z $_ARGS_CURRENT_SUBCOMMAND ]]&&args.dispatch "$@"&&exit 0
+args.parse "$@"
+args.verify||{
+args.show_help
+exit 1
+}
+args.has "-h" "--help"&&args.show_help&&exit 0||true
+}
+args.parse(){
+declare -ga _ARGS_OPTS=()
+declare -ga _ARGS_ARGS=()
+declare -gA _ARGS_OPT_ARGS=()
+local end=0 last=""
+for arg in "$@";do
+if [[ $arg == '--' ]];then
+end=1
+last=""
+elif ((!end))&&[[ $arg =~ ^- ]];then
+if [[ $arg =~ ^-[a-zA-Z]{2,}$ ]];then
+local c="${arg:1}"
+for ((i=0; i<${#c}; i++));do
+last="-${c:i:1}"
+_ARGS_OPTS+=("$last")
+done
+else
+_ARGS_OPTS+=("$arg")
+last="$arg"
+fi
+else
+_ARGS_ARGS+=("$arg")
+[[ $last ]]&&_ARGS_OPT_ARGS["$last"]=$((${#_ARGS_ARGS[@]}-1))&&last=""
+fi
+done
+return 0
+}
+args.verify(){
+for option in "${_ARGS_OPTS[@]}";do
+local opt="${option##*-}" another
+array.contains _ARGS_OPTIONS "$opt"||{
+log.error "未知选项: \"$option\""
+return 1
+}
+array.contains _ARGS_OPTIONS_SWITCH "$opt"&&{
+another=${_ARGS_OPTIONS_SWITCH[$opt]}
+args.has "-$another" "--$another"&&log.error "重复选项"&&return 1
+[[ $option =~ ^-[a-zA-Z]$ ]]&&opt=$another
+}
+case ${_ARGS_OPTIONS_TYPE[$opt]} in
+"NONE")unset "_ARGS_OPT_ARGS[$option]" 2>/dev/null||true;;
+*)[[ -z ${_ARGS_OPT_ARGS[$option]+x} ]]&&log.error "选项 $option 需要参数"&&return 1
+esac
+done
+array.has_duplicates _ARGS_OPTS&&log.error "重复选项"&&return 1
+local -a _ARGS_TEMP_ARGS=("${_ARGS_ARGS[@]}")
+for value in "${_ARGS_OPT_ARGS[@]}";do
+unset "_ARGS_TEMP_ARGS[$value]"
+done
+declare -ga _ARGS_FINAL_ARGS=("${_ARGS_TEMP_ARGS[@]}")
+[[ $(map.len _ARGS_HELP_ARGS) -eq 0 ]]&&[[ $(array.len _ARGS_FINAL_ARGS) -gt 0 ]]&&log.error "位置参数错误"&&return 1||true
+}
+args.has(){
+for o in "$@";do
+array.contains _ARGS_OPTS "$o"&&return 0
+done
+return 1
+}
+args.get(){
+for o in "$@";do
+i=$(args.opt.arg_index "$o")
+if [[ $i ]];then
+args.arg "$i"
+return 0
+fi
+done
+return 1
+}
+args.args(){ echo "_ARGS_FINAL_ARGS";}
+args.arg(){ array.get _ARGS_ARGS "$1";}
+args.opt.arg_index(){ echo "${_ARGS_OPT_ARGS[$1]:-}";}
+args.show_help(){
+usage.show _ARGS_HELP_OPTIONS _ARGS_HELP_ARGS _ARGS_HELP_EXAMPLES _ARGS_HELP_NOTICES
+}
+fs.file.exists(){ [[ -f $1 ]];}
+fs.dir.exists(){ [[ -d $1 ]];}
+fs.write(){
+local _f="$1"
+mkdir -p "$(dirname "$1")"
+shift
+(($#>0))&&printf "%s\n" "$@" >"$_f"||: >"$_f"
+}
+fs.find(){ local _n=$(awk -v s="${3:-1}" -v p="$2" 'NR>=s && $0~p{print NR; exit}' "$1" 2>/dev/null)&&[[ $_n ]]&&echo "$_n"||return 1;}
+fs.replace(){
+local _repl=$(string.escape.sed "$3")
+[[ -n ${4:-} ]]&&sed -i "$4,/$2/{/$2/{s|.*|$_repl|}}" "$1"||sed -i "/$2/{s|.*|$_repl|}" "$1"
+}
+fs.insert(){ sed -i "/$2/a\\$3" "$1" 2>/dev/null;}
+fs.rmline(){ [[ -n $4 ]]&&sed -i "$4,/$2/{/$2/d}" "$1" 2>/dev/null||sed -i "/$2/d" "$1" 2>/dev/null;}
+fs.cleanup(){ ls -t "$1"* 2>/dev/null|tail -n +$((${2:-3}+1))|xargs -r rm -f;}
+fs.mktemp(){ mktemp "$@" 2>/dev/null||{ log.error "Failed to create temporary file"&&return 1;};}
+fs.file.extract(){
+local path=$(realpath "$1") base=$(basename "$1")
+builtin cd "$2" >/dev/null||return 1
+case "${base,,}" in
+*.zip|*.war|*.jar|*.ear|*.sublime-package|*.ipa|*.ipsw|*.xpi|*.apk|*.aar|*.whl|*.vsix|*.crx|*.pk3|*.pk4)unzip -q "$path";;
+*.tar.gz|*.tgz)tar -zxf "$path";;
+*.tar.bz2|*.tbz|*.tbz2|*.tar.bz)tar -jxf "$path";;
+*.tar.xz|*.txz)tar -xJf "$path";;
+*.tar)tar -xf "$path";;
+*.gz)gzip -dc "$path" >"${base%.gz}";;
+*.bz2)bzip2 -dc "$path" >"${base%.bz2}";;
+*.xz)xz -dc "$path" >"${base%.xz}";;
+*)chmod +x "$path"
+cp "$path" "${base%%.*}"
+esac
+}
+declare -g _REQUESTS_TIMEOUT=30
+declare -g _REQUESTS_USER_AGENT="bashlet-requests/1.0"
+declare -g _REQUESTS_BASE_URL=""
+declare -gA _REQUESTS_HEADERS=()
+declare -gA _REQUESTS_AUTH=()
+declare -g _REQUESTS_CURL=""
+declare -g _REQUESTS_JQ=""
+requests.init(){
+declare -ga _REQUESTS_CURL_EXTRA=("$@")
+system.command.required "curl"&&_REQUESTS_CURL="$(command -v curl)"
+system.command.required "jq"&&_REQUESTS_JQ="$(command -v jq)"
+_REQUESTS_HEADERS=(
+["Accept"]="*/*"
+["Accept-Encoding"]="gzip, deflate"
+["Connection"]="keep-alive")
+log.debug "requests module initialized: curl=$_REQUESTS_CURL, jq=$_REQUESTS_JQ"
+return 0
+}
+requests.curl.check(){
+[[ -n $_REQUESTS_CURL ]]||_REQUESTS_CURL="$(command -v curl)"
+}
+requests.jq.check(){
+[[ -n $_REQUESTS_JQ ]]||_REQUESTS_JQ="$(command -v jq)"
+}
+requests.curl.configure(){
+local array_name="$1"
+local timeout="${2:-}"
+[[ -n $timeout ]]&&array.append "$array_name" "--max-time" "$timeout"
+array.append "$array_name" "-A" "$_REQUESTS_USER_AGENT"
+local key
+for key in "${!_REQUESTS_HEADERS[@]}";do
+array.append "$array_name" "-H" "$key: ${_REQUESTS_HEADERS[$key]}"
+done
+if [[ ${#_REQUESTS_AUTH[@]} -gt 0 ]];then
+local auth_key
+for auth_key in "${!_REQUESTS_AUTH[@]}";do
+array.append "$array_name" "-H" "$auth_key: ${_REQUESTS_AUTH[$auth_key]}"
+done
+fi
+}
+requests.request.build(){
+local -n cmd_ref="$1"
+local -r method="$2"
+local -r url="$3"
+local -r body="$4"
+local -r content_type="${5:-$(requests.content_type.detect "$4")}"
+cmd_ref=("$_REQUESTS_CURL" "-s" "--compressed" "-X" "$method")
+cmd_ref+=("${_REQUESTS_CURL_EXTRA[@]}")
+requests.curl.configure cmd_ref "$_REQUESTS_TIMEOUT"
+if [[ -n $body ]];then
+cmd_ref+=("-d" "$body")
+[[ -n $content_type ]]&&cmd_ref+=("-H" "Content-Type: $content_type")
+fi
+local full_url="$url"
+[[ -n $_REQUESTS_BASE_URL ]]&&full_url="$_REQUESTS_BASE_URL$url"
+cmd_ref+=("$full_url")
+}
+requests.request(){
+local -r method="$1"
+local -r url="$2"
+local -r body="$3"
+local -r content_type="$4"
+requests.curl.check
+requests.jq.check
+local curl_cmd
+requests.request.build curl_cmd "$method" "$url" "$body" "$content_type"||return 1
+local temp_body="$(fs.mktemp)"||return 1
+local temp_headers="$(fs.mktemp)"||return 1
+trap 'rm -f "${temp_body:-}" "${temp_headers:-}"' EXIT
+local status_code=$("${curl_cmd[@]}" -w "%{http_code}" -D "$temp_headers" -o "$temp_body" 2>/dev/null)
+local body_base64="$(string.base64.encode "$temp_body")"
+local headers_json="$("$_REQUESTS_JQ" -Rs 'split("\n") | map(select(length > 0 and test(":"))) | map(split(": ") | {(.[0]): .[1] | rtrimstr("\r")}) | add // {}' "$temp_headers")"
+local success="false"
+[[ $status_code =~ ^2[0-9][0-9]$ ]]&&success="true"
+echo "{\"status_code\":$status_code,\"headers\":$headers_json,\"body\":\"$body_base64\",\"success\":$success}"
+}
+requests.download(){
+requests.curl.check
+local curl_cmd=("$_REQUESTS_CURL" "-L")
+requests.curl.configure curl_cmd
+curl_cmd+=("-o" "$2")
+[[ ${3:-true} == "true" ]]&&curl_cmd+=("--progress-bar")
+[[ ${4:-true} == "true" ]]&&curl_cmd+=("-C" "-")
+"${curl_cmd[@]}" "$1"
+}
+requests.sse(){
+local -r callback="$1"
+local -r method="$2"
+local -r url="$3"
+local -r body="$4"
+local -r content_type="${5:-$(requests.content_type.detect "$4")}"
+requests.curl.check
+local curl_cmd
+requests.request.build curl_cmd "$method" "$url" "$body" "$content_type"||return 1
+curl_cmd+=("-N")
+"${curl_cmd[@]}"|while IFS= read -r line;do
+[[ $line =~ ^data:\ (.+) ]]&&"$callback" "${BASH_REMATCH[1]}"
+done
+}
+requests._urlencode(){
+"$_REQUESTS_JQ" -nr --arg str "$1" '$str | @uri'
+}
+requests.content_type.detect(){
+[[ $1 =~ ^\{.*\}$ ]]&&echo "application/json"&&return 0
+[[ $1 =~ ^\[.*\]$ ]]&&echo "application/json"&&return 0
+[[ $1 =~ ^[a-zA-Z0-9_-]+=[^\&]+(\&[a-zA-Z0-9_-]+=[^\&]+)*$ ]]&&echo "application/x-www-form-urlencoded"&&return 0
+echo ""
+}
+requests.body.build(){
+local -n ref="$1"
+local first=true
+requests.jq.check
+if [[ ${2:-form} == "json" ]];then
+printf "{"
+for key in "${!ref[@]}";do
+$first||printf ","
+printf '"%s":"%s"' "$key" "${ref[$key]}"
+first=false
+done
+printf "}\n"
+else
+for key in "${!ref[@]}";do
+$first||printf "&"
+printf '%s=%s' "$(requests._urlencode "$key")" "$(requests._urlencode "${ref[$key]}")"
+first=false
+done
+printf "\n"
+fi
+}
+requests.query.build(){
+local query="" first=true
+for param in "$@";do
+local key="${param%%=*}" value="${param#*=}"
+if $first;then
+query="?$(requests._urlencode "$key")=$(requests._urlencode "$value")"
+first=false
+else
+query="$query&$(requests._urlencode "$key")=$(requests._urlencode "$value")"
+fi
+done
+echo "$query"
+}
+requests.get(){ requests.request "GET" "$1$(requests.query.build "${@:2}")" "" "";}
+requests.post(){ requests.request "POST" "$1" "$2" "${3:-}";}
+requests.put(){ requests.request "PUT" "$1" "$2" "${3:-}";}
+requests.delete(){ requests.request "DELETE" "$1" "" "";}
+requests.patch(){ requests.request "PATCH" "$1" "$2" "${3:-}";}
+requests.head(){ requests.request "HEAD" "$1" "" "";}
+requests.options(){ requests.request "OPTIONS" "$1" "" "";}
+requests.status_code(){ "$_REQUESTS_JQ" -r '.status_code' <<<"$1";}
+requests.headers(){ [[ -n ${2:-} ]]&&"$_REQUESTS_JQ" -r --arg name "$2" '.headers[$name] // empty' <<<"$1"||"$_REQUESTS_JQ" -r '.headers' <<<"$1";}
+requests.text(){ "$_REQUESTS_JQ" -r '.body' <<<"$1"|string.base64.decode;}
+requests.json(){
+local -r body_text="$(requests.text "$1")"
+[[ -n ${2:-} ]]&&"$_REQUESTS_JQ" -r "$2" <<<"$body_text"||echo "$body_text"
+}
+requests.success(){ "$_REQUESTS_JQ" -r '.success' <<<"$1";}
+requests.raise_for_status(){ [[ "$(requests.success "${1:-}")" == "true" ]]||{ log.error "HTTP error: status code $(requests.status_code "${1:-}")"&&return 1;};}
+requests.timeout(){ string.natural.check "$1"&&_REQUESTS_TIMEOUT="$1"||{ log.error "timeout must be a positive integer"&&return 1;};}
+requests.headers.append(){
+local key="${1:-}"
+shift
+while [[ -n $key ]];do
+local value="$1"
+shift
+_REQUESTS_HEADERS["$key"]="$value"
+log.debug "default header set: $key: $value"
+key="${1:-}"
+shift||true
+done
+}
+requests.base_url(){ _REQUESTS_BASE_URL="$1";}
+requests.headers.clear(){ _REQUESTS_HEADERS=();}
+requests.auth(){ _REQUESTS_AUTH["Authorization"]="Basic $(jq -nr --arg c "$1:$2" '$c | @base64')";}
+requests.auth_bearer(){ _REQUESTS_AUTH["Authorization"]="Bearer $1";}
+VERSION="0.1.0"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
+DEFUDDLE_BASE_URL="https://defuddle.md"
+declare -ga EXA_VALID_TYPES=("neural" "keyword" "hybrid" "fast" "deep" "deep-reasoning" "deep-max" "magic" "instant")
+declare -ga EXA_VALID_CATEGORIES=("company" "research paper" "news" "tweet" "personal site" "financial report" "people")
+declare -ga HN_VALID_TAGS=("story" "comment" "poll" "pollopt" "show_hn" "ask_hn" "front_page")
+: "${EXA_API_KEY:=$(pass.get "exa")}"
+main(){
+args.name "retrieve"
+args.init "信息检索工具 - 支持多种检索源"
+args.add_options "version" "v" "显示版本信息"
+args.add_options "help" "h" "显示帮助信息"
+args.add_subcommand "fetch" "查看普通网页" "cmd_fetch"
+args.add_subcommand "github" "GitHub调试信息检索" "cmd_github"
+args.add_subcommand "hackernews" "Hacker News 技术新闻检索" "cmd_hackernews"
+args.add_subcommand "stackoverflow" "Stack Overflow 技术问答检索" "cmd_stackoverflow"
+args.add_subcommand "exa" "Exa AI 网络搜索" "cmd_exa_search"
+args.process "$@"
+args.has "-v" "--version"&&usage.version&&exit 0
+}
+cmd_fetch(){
+args.init "查看普通网页"
+args.add_options "ARG" "url" "网页网址"
+args.process "$@"
+declare -n position_args=$(args.args)
+[[ ${#position_args[@]} -eq 0 ]]&&log.error "请提供要访问的URL"&&exit 1
+requests.init
+local target="${position_args[0]}"
+local response=$(requests.get "$DEFUDDLE_BASE_URL/$target")
+requests.raise_for_status "$response"
+requests.text "$response"
+}
+cmd_github(){
+args.init "GitHub调试信息检索"
+args.add_options "exact" "" "精确错误消息搜索" "ERROR_MSG"
+args.add_options "closed" "" "在已关闭问题中搜索"
+args.add_options "version" "" "版本特定问题搜索" "VERSION"
+args.add_options "repo" "" "仓库名称" "OWNER/REPO"
+args.add_options "limit" "n" "限制返回结果数量（默认 30）" "NUMBER"
+args.add_options "ARG" "query" "搜索关键词（多个关键词用空格分隔）"
+args.process "$@"
+local exact_query="$(args.get "--exact")"||exact_query=""
+local version_query="$(args.get "--version")"||version_query=""
+local repo="$(args.get "--repo")"||repo=""
+local limit="$(args.get "-n" "--limit")"&&string.natural.check "$limit"||limit="30"
+local closed_flag=""
+args.has "--closed"&&closed_flag="--state closed"
+declare -n position_args=$(args.args)
+local final_query="${position_args[*]} $exact_query $version_query"
+final_query="$(string.trim "$final_query")"
+local -a gh_args=("--json" "title,url,state,number,author,createdAt" "--limit" "$limit")
+[[ -n $closed_flag ]]&&gh_args+=("--state" "closed")
+[[ -n $repo ]]&&gh_args+=("--repo" "$repo")
+gh_args+=("$final_query")
+local template='{{range .}}{{.title}}|{{.url}}|{{.state}}|{{.number}}|{{.author.login}}|{{timefmt "2006-01-02" .createdAt}}{{"\n"}}{{end}}'
+gh_args+=("--template" "$template")
+log.info "执行查询: $final_query"
+local result exit_code=0
+result=$(gh search issues "${gh_args[@]}" 2>/dev/null)||exit_code=$?
+if [[ $exit_code -ne 0 ]]||[[ $result == "[]" ]]||[[ -z $result ]];then
+echo "没有找到包含 '$final_query' 的相关结果"
+return 0
+fi
+echo "GitHub 搜索结果 (关键词: '$final_query'):"
+echo "=================================================="
+local count=0
+while IFS='|' read -r title url state number author date;do
+((count++))
+echo "$count. $title"
+echo "   Issue #$number | 状态: $state | 作者: $author | 时间: $date"
+echo "   链接: $url"
+echo ""
+done <<<"$result"
+[[ $count -eq 0 ]]&&echo "没有找到相关结果"
+}
+cmd_hackernews(){
+args.init "Hacker News 技术新闻检索"
+args.add_options "limit" "n" "返回结果数量（默认 20，最大 30）" "NUMBER"
+args.add_options "tags" "t" "过滤标签（story, comment, poll, show, ask, job）" "TAGS"
+args.add_options "period" "p" "时间范围（last24h, pastweek, pastmonth, all）" "PERIOD"
+args.add_options "ARG" "query" "搜索关键词（必需）"
+args.process "$@"
+local limit="$(args.get "-n" "--limit")"&&string.natural.check "$limit"||limit="20"
+local tags="$(args.get "-t" "--tags")"&&array.contains HN_VALID_TAGS "$tags"||tags=""
+local period="$(args.get "-p" "--period")"||period="all"
+declare -n position_args=$(args.args)
+local search_query="${position_args[*]}"
+[[ $limit -gt 30 ]]&&limit=30
+requests.init
+requests.base_url "https://hn.algolia.com/api/v1"
+log.info "搜索: $search_query"
+local -a query_params=("query=$search_query" "hitsPerPage=$limit")
+[[ -n $tags ]]&&query_params+=("tags=$tags")
+case "$period" in
+"last24h")local timestamp=$(($(date +%s)-86400))
+query_params+=("numericFilters=created_at_i>$timestamp")
+;;
+"pastweek")local timestamp=$(($(date +%s)-604800))
+query_params+=("numericFilters=created_at_i>$timestamp")
+;;
+"pastmonth")local timestamp=$(($(date +%s)-2629743))
+query_params+=("numericFilters=created_at_i>$timestamp")
+esac
+local response
+response=$(requests.get "/search" "${query_params[@]}")
+requests.raise_for_status "$response"
+response=$(requests.text "$response")
+local total_hits
+total_hits=$(echo "$response"|jq -r '.nbHits // 0')
+[[ $total_hits -eq 0 ]]&&echo "没有找到包含 '$search_query' 的相关结果"&&return 0
+echo "Hacker News 搜索结果 (关键词: '$search_query'):"
+echo "=================================================="
+local displayed_count=0
+while IFS=$'\t' read -r title url points author created_at object_id tag;do
+((displayed_count++))
+title=$(echo "$title"|sed 's/<[^>]*>//g'|tr '\n' ' ')
+echo "$displayed_count. $title"
+echo "   类型: $tag | 分数: $points | 作者: $author | 时间: $created_at"
+[[ -n $url && $url != "null" ]]&&echo "   链接: $url"
+echo "   HN链接: https://news.ycombinator.com/item?id=$object_id"
+echo ""
+[[ $displayed_count -ge $limit ]]&&break
+done < <(echo "$response"|jq -r '.hits[] |
+    (.title // .story_title // .comment_text // "") + "\t" +
+    (.url // .story_url // "") + "\t" +
+    (.points // 0 | tostring) + "\t" +
+    (.author // "unknown") + "\t" +
+    (.created_at // "") + "\t" +
+    (.objectID // "") + "\t" +
+    (._tags[0] // "story")')
+[[ $displayed_count -eq 0 ]]&&echo "没有找到相关结果"
+}
+cmd_stackoverflow(){
+args.init "Stack Overflow 技术问答检索"
+args.add_options "tagged" "t" "按标签过滤（多个标签用分号分隔）" "TAGS"
+args.add_options "limit" "n" "返回结果数量（默认 20，最大 100）" "NUMBER"
+args.add_options "ARG" "query" "搜索关键词（必需，在标题中搜索）"
+args.process "$@"
+local tagged="$(args.get "-t" "--tagged")"||tagged=""
+local limit="$(args.get "-n" "--limit")"&&string.natural.check "$limit"||limit="20"
+declare -n position_args=$(args.args)
+local search_query="${position_args[*]}"
+[[ -z $search_query ]]&&log.error "请提供要搜索的关键词"&&exit 1
+[[ $limit -gt 100 ]]&&limit=100
+requests.init
+requests.base_url "https://api.stackexchange.com/2.3"
+log.info "搜索: $search_query"
+local -a query_params=("intitle=$search_query" "site=stackoverflow" "pagesize=$limit" "sort=relevance" "order=desc")
+[[ -n $tagged ]]&&query_params+=("tagged=$tagged")
+local response
+response=$(requests.get "/search" "${query_params[@]}")
+requests.raise_for_status "$response"
+response=$(requests.text "$response")
+local items_count
+items_count=$(echo "$response"|jq -r '.items | length')
+[[ $items_count -eq 0 ]]&&echo "没有找到包含 '$search_query' 的相关结果"&&return 0
+echo "Stack Overflow 搜索结果 (关键词: '$search_query'):"
+echo "=================================================="
+local displayed_count=0
+while IFS=$'\t' read -r title link score view_count answer_count is_answered tags;do
+((displayed_count++))
+echo "$displayed_count. $title"
+echo "   得分: $score | 浏览: $view_count | 回答: $answer_count | 已解决: $is_answered"
+echo "   标签: $tags"
+echo "   链接: $link"
+echo ""
+[[ $displayed_count -ge $limit ]]&&break
+done < <(echo "$response"|jq -r '.items[] |
+    (.title // "无标题") + "\t" +
+    (.link // "") + "\t" +
+    (.score // 0 | tostring) + "\t" +
+    (.view_count // 0 | tostring) + "\t" +
+    (.answer_count // 0 | tostring) + "\t" +
+    (if .is_answered then "是" else "否" end) + "\t" +
+    (.tags | join(",") // "")')
+[[ $displayed_count -eq 0 ]]&&echo "没有找到相关结果"
+}
+cmd_exa_search(){
+args.init "Exa AI 网络搜索"
+args.add_options "type" "t" "搜索类型（neural, keyword, hybrid, fast, deep, instant）" "TYPE"
+args.add_options "category" "c" "数据类别（company, research paper, news, tweet, personal site, financial report, people）" "CATEGORY"
+args.add_options "limit" "n" "返回结果数量（默认 10，最大 100）" "NUMBER"
+args.add_options "ARG" "query" "搜索目标（支持语义搜索）"
+args.process "$@"
+[[ -z ${EXA_API_KEY:-} ]]&&log.error "未设置 EXA_API_KEY 环境变量"&&exit 1
+local type="$(args.get "-t" "--type")"&&array.contains EXA_VALID_TYPES "$type"||type=""
+local category="$(args.get "-c" "--category")"&&array.contains EXA_VALID_CATEGORIES "$category"||category=""
+local limit="$(args.get "-n" "--limit")"&&string.natural.check "$limit"||limit="10"
+declare -n position_args=$(args.args)
+local query="${position_args[*]}"
+requests.init
+requests.base_url "https://api.exa.ai"
+requests.headers.append "x-api-key" "$EXA_API_KEY"
+local safe_query="$query"
+safe_query="${safe_query//\\/\\\\}"
+safe_query="${safe_query//\"/\\\"}"
+safe_query="${safe_query//$'\n'/\\n}"
+safe_query="${safe_query//$'\r'/\\r}"
+safe_query="${safe_query//$'\t'/\\t}"
+local json_data="{\"query\":\"$safe_query\",\"numResults\":$limit"
+[[ -n $type ]]&&json_data="$json_data,\"type\":\"$type\""
+[[ -n $category ]]&&json_data="$json_data,\"category\":\"$category\""
+json_data="$json_data}"
+log.info "搜索: $query"
+local response
+response=$(requests.post "/search" "$json_data" "application/json")
+requests.raise_for_status "$response"
+response=$(requests.text "$response")
+if echo "$response"|jq -e '.error' >/dev/null 2>&1;then
+local error_msg=$(echo "$response"|jq -r '.error')
+log.error "API 错误: $error_msg"
+exit 1
+fi
+local results_count
+results_count=$(echo "$response"|jq -r '.results | length')
+[[ $results_count -eq 0 ]]&&echo "没有找到包含 '$query' 的相关结果"&&return 0
+echo "Exa 搜索结果 (关键词: '$query'):"
+echo "=================================================="
+local count=0
+while IFS=$'\t' read -r title url author published;do
+((count++))
+echo "$count. $title"
+echo "   作者: $author | 发布时间: $published"
+echo "   链接: $url"
+echo ""
+done < <(echo "$response"|jq -r '.results[] |
+    (.title // "无标题") + "\t" +
+    (.url // "") + "\t" +
+    (.author // "unknown") + "\t" +
+    (.publishedDate // "")')
+[[ $count -eq 0 ]]&&echo "没有找到相关结果"
+}
+if [[ ${BASH_SOURCE[0]} == "$0" ]];then
+main "$@"
+fi
