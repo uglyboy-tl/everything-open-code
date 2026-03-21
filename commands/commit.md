@@ -4,42 +4,93 @@ agent: git-commiter
 model: deepseek/deepseek-chat
 subtask: true
 ---
-执行用户指令: $ARGUMENTS
 
-## 处理流程
-### 0. 并行上下文收集
-并行（按需）执行以下命令，以最小化延迟
+用户指令: $ARGUMENTS
+
+## 一、上下文收集（并行执行）
+
 ```bash
-# Group 1: Current state
-git status
+git status --porcelain
 git diff --staged --stat
 git diff --stat
-
-# Group 2: History context
-git log -10 --oneline
 git log -10 --pretty=format:"%s"
 ```
-一次性获取如下信息：
-1. 哪些文件发生了改变
-2. 最近10次提交的语言和风格
 
-### 1. 准备阶段
-#### 判断需要提交的内容
-根据 git status 输出：
-- **混合**（已暂存+未暂存）：执行 `git stash push --keep-index -m "temp" && git reset HEAD`
-  - 作用：stash 未暂存更改，取消已暂存内容，以便按功能重新分组
-- **仅已暂存**：执行 `git reset HEAD`（取消暂存，重新分组）
-- **仅未暂存**：跳过
+**提取关键信息：**
+- 变更文件清单及状态
+- 暂存区与工作区差异
+- 最近提交风格（语言、格式偏好）
 
-**为何关键：**确保仅提交已完成的变更，避免混入未完成的修改
+---
 
-### 2. 原子分组提交
-分析文件变更，按功能模块分组，每组执行：
-1. `git add <相关文件>`
-2. Review（检查原子性、正确性）
-3. `git commit -m "type: description"`（遵循 Conventional Commits）
+## 二、状态判断与处理
 
-### 3. 恢复阶段
-- 混合状态：执行 `git stash pop`
-- 其他：跳过
+| 检查项 | 条件 | 处理策略 |
+|--------|------|----------|
+| **空仓库** | 无 `.git` 目录 | 提示"非 Git 仓库"，终止 |
+| **无变更** | `git status` 为空 | 提示"无变更可提交"，终止 |
+| **合并冲突** | 存在 `unmerged paths` | 提示"请先解决合并冲突"，终止 |
 
+**暂存区保护原则**：
+- 用户已暂存的文件视为明确意图，**不重置**
+- 仅对工作区未暂存文件进行分析和建议
+
+---
+
+## 三、提交执行
+
+### 情况 A：用户指令明确（$ARGUMENTS 非空）
+
+直接使用用户指令作为 commit message：
+```bash
+git commit -m "$ARGUMENTS"
+```
+
+### 情况 B：用户指令为空，自动分析
+
+**分组原则**：按功能单元原子化分组
+- 同一功能/修复涉及的文件归为一组
+- 配置文件、类型定义等基础变更单独提交
+- 敏感信息（密钥、密码）必须排除
+
+**执行循环**（直到所有变更提交完毕）：
+
+1. **分析分组**：`git diff` 识别变更相关性
+2. **暂存**：`git add <相关文件>`
+3. **生成 message**：参考历史风格
+4. **提交前确认**（关键检查）：
+   - [ ] 变更属于单一功能单元？
+   - [ ] 无调试代码（console.log、TODO）？
+   - [ ] 无敏感信息泄露？
+5. **提交**：`git commit -m "<type>: <description>"`
+
+---
+
+## 四、Commit Message 规范
+
+**格式**：`type: description`
+
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| feat | 新功能 | `feat: add user authentication` |
+| fix | 修复 bug | `fix: resolve login redirect loop` |
+| refactor | 重构 | `refactor: extract validation logic` |
+| docs | 文档 | `docs: update API reference` |
+| style | 格式 | `style: format code with prettier` |
+| test | 测试 | `test: add unit tests for utils` |
+| chore | 杂项 | `chore: update dependencies` |
+
+**描述要求**：
+- 参考最近 10 条提交的语言风格（中文/英文）
+- 动词开头，简洁明确
+- 不超过 50 字符
+
+---
+
+## 五、异常处理
+
+| 异常 | 处理方式 |
+|------|----------|
+| 暂存区冲突 | 提示具体文件，建议 `git mergetool` |
+| pre-commit 失败 | 展示错误信息，不自动绕过 |
+| 网络问题 | 本地提交成功，提示推送失败 |
