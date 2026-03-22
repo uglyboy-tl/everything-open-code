@@ -3,7 +3,7 @@
   "plugin": [
     "opencode-wakatime"
   ],
-  "model": "bailian-coding-plan/qwen3-max-2026-01-23",
+  "model": "bailian-coding-plan/glm-5",
   "small_model": "opencode/gpt-5-nano",
   "share": "disabled",
   "autoupdate": false,
