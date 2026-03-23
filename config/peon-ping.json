@@ -2,6 +2,7 @@
   "default_pack": "peasant",
   "volume": 0.5,
   "enabled": true,
+  "desktop_notifications": false,
   "categories": {
     "session.start": true,
     "session.end": true,
