@@ -1,2 +1,18 @@
 .opencode
 .worktrees
+
+# 测试相关
+node_modules/
+bun.lock
+package.json
+*.lock
+
+# 测试文件
+tests/
+*.test.ts
+*.spec.ts
+
+# 临时文件
+*.log
+tmp/
+/tmp
