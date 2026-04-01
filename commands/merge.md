@@ -42,12 +42,9 @@ git branch -r | grep develop
 
 ```
 develop worktree 存在？
-  ├─ 是 → 切换到 develop worktree 目录
+  ├─ 是 → 记录 develop worktree 路径到 ${DEVELOP_WORKTREE}
   │
-  └─ 否 → 在主仓库目录调用 `using-git-worktrees` 技能创建
-           - 本地 develop 存在 → 直接 checkout
-           - 本地不存在但有远程 → git checkout -b develop origin/develop
-           - 均不存在 → git checkout -b develop <主分支>
+  └─ 否 → 在主仓库目录调用 `using-git-worktrees` 技能创建 develop worktree
 ```
 
 ### 同步远程
@@ -83,7 +80,11 @@ git pull origin develop --ff-only
 
 ### 合并命令
 
+**重要：必须在 develop 分支的 worktree 目录中执行合并**
+
 ```bash
+cd ${DEVELOP_WORKTREE} && \
+# 使用 --no-ff 强制创建合并提交，保留功能分支历史
 git merge --no-ff -m "merge(${FEATURE_BRANCH}): 合并到 develop" ${FEATURE_BRANCH}
 ```
 

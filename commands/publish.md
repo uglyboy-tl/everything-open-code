@@ -42,14 +42,11 @@ git fetch origin
 ### 2. 信息收集与确认
 环境验证通过后，收集发布所需信息：
 ```bash
-# 收集待发布内容
-git log --oneline <主干分支>..origin/develop  # develop 相比主干的提交
+# 收集待发布内容（使用本地 develop 分支）
+git log --oneline <主干分支>..develop  # develop 相比主干的提交
 
 # 收集版本信息
 git tag -l 'v*' --sort=-v:refname | head -5    # 最新5个版本标签
-
-# 收集待清理分支
-git branch --merged origin/develop | grep -v -E 'develop|<主干分支>|\*'
 ```
 
 **确认发布内容**：
@@ -61,7 +58,8 @@ git branch --merged origin/develop | grep -v -E 'develop|<主干分支>|\*'
 
 ### 3. 合并 develop 到主干
 ```bash
-git merge --no-ff origin/develop -m "merge(develop): 合并到主分支"
+# 使用本地 develop 分支进行合并
+git merge --no-ff develop -m "merge(develop): 合并到主分支"
 ```
 
 **验证点**：
@@ -141,8 +139,8 @@ git push origin develop --force-with-lease
 **安全确认**：展示已合并分支列表，询问用户确认后执行清理。
 
 ```bash
-# 列出待清理分支
-git branch --merged origin/develop | grep -v -E 'develop|<主干分支>|\*'
+# 列出待清理分支（基于本地 develop 分支）
+git branch --merged develop | grep -v -E 'develop|<主干分支>|\*'
 
 # 对每个确认的分支
 git worktree remove <worktree-path>  # 删除 worktree
