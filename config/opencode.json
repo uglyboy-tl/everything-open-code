@@ -4,7 +4,6 @@
     "opencode-wakatime"
   ],
   "model": "bailian-coding-plan/glm-5",
-  "small_model": "opencode/gpt-5-nano",
   "share": "disabled",
   "autoupdate": false,
   "mcp": {
@@ -28,7 +27,8 @@
   ],
   "permission": {
     "external_directory": {
-      "$HOME/Code/**": "allow"
+      "$HOME/Code/**": "allow",
+      "/tmp/**": "allow"
     }
   },
   "provider": {
