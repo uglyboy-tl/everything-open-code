@@ -1,7 +1,6 @@
 ---
 description: 提交当前修改
 agent: git-commiter
-model: deepseek/deepseek-chat
 subtask: true
 ---
 
