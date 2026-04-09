@@ -3,7 +3,7 @@
   "plugin": [
     "opencode-wakatime"
   ],
-  "model": "bailian-coding-plan/glm-5",
+  "model": "alibaba-coding-plan-cn/qwen3-coder-plus",
   "share": "disabled",
   "autoupdate": false,
   "mcp": {
@@ -42,63 +42,6 @@
         "baseURL": "https://xget.uglyboy.cn/ip/openrouter/api/v1"
       },
     },
-    "bailian-coding-plan": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Coding Plan",
-      "options": {
-        "baseURL": "https://coding.dashscope.aliyuncs.com/v1",
-      },
-      "models": {
-        "qwen3-max-2026-01-23": {
-          "name": "Qwen3 Max"
-        },
-        "MiniMax-M2.5": {
-          "name": "MiniMax M2.5",
-          "options": {
-            "thinking": {
-              "type": "enabled",
-              "budgetTokens": 1024
-            }
-          }
-        },
-        "glm-5": {
-          "name": "GLM-5",
-          "options": {
-            "thinking": {
-              "type": "enabled",
-              "budgetTokens": 1024
-            }
-          }
-        },
-        "glm-4.7": {
-          "name": "GLM-4.7",
-          "options": {
-            "thinking": {
-              "type": "enabled",
-              "budgetTokens": 1024
-            }
-          }
-        },
-        "kimi-k2.5": {
-          "name": "Kimi K2.5",
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          },
-          "options": {
-            "thinking": {
-              "type": "enabled",
-              "budgetTokens": 1024
-            }
-          }
-        }
-      }
-    },
     "n1n": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "n1n",
@@ -108,9 +51,6 @@
       "models": {
         "gemini-3-flash-preview": {
           "name": "Gemini 3 Flash"
-        },
-        "minimax-m2.1": {
-          "name": "Minimax M2.1"
         },
         "gpt-5.2": {
           "name": "GPT 5.2"
