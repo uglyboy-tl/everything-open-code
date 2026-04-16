@@ -2,10 +2,12 @@
 description: Prompt 优化专家, 基于变分推理的 Prompt 优化引擎, 通过多策略采样、评分与融合, 生成高质量优化 Prompt
 mode: subagent
 temperature: 0.6
-tools:
-  write: false
-  edit: false
-  bash: false
+hidden: true
+permission:
+  "*": deny
+  read: allow
+  glob: allow
+  grep: allow
 ---
 
 # Role: Variational Prompt Optimization Engine (VPOE)
