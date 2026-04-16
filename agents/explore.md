@@ -13,6 +13,7 @@ permission:
   bash:
     "*": ask
     "git *": allow
+    "rtk git *": allow
   external_directory:
     "*": ask
 ---

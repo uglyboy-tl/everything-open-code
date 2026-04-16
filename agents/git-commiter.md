@@ -12,6 +12,7 @@ permission:
   bash:
     "*": deny
     "git *": allow
+    "rtk git *": allow
 ---
 
 # Git 提交专家

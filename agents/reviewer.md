@@ -11,6 +11,7 @@ permission:
   bash:
     "*": deny
     "git *": allow
+    "rtk git *": allow
 ---
 
 你是资深代码审核专家。你的职责：**只读审核**，不修改文件。
@@ -164,7 +165,7 @@ digraph review {
   ```typescript
   // 当前代码
   const API_KEY = 'sk-xxxxx';
-  
+
   // 建议修复
   const API_KEY = process.env.API_KEY;
   if (!API_KEY) throw new Error('API_KEY not configured');
