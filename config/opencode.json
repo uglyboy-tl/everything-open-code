@@ -1,9 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "opencode-wakatime"
+    "opencode-wakatime",
+    "@tarquinen/opencode-dcp@latest"
   ],
-  "model": "alibaba-coding-plan-cn/qwen3-coder-plus",
+  "model": "opencode/deepseek-v4-flash-free",
   "share": "disabled",
   "autoupdate": false,
   "mcp": {
@@ -15,11 +16,10 @@
       }
     },
   },
-  "lsp": {
-    "bash": {
-      "disabled": true
-    }
+  "experimental": {
+    "continue_loop_on_deny": true
   },
+  "lsp": {},
   "disabled_providers": [
     "github-copilot",
     "github-copilot-enterprise",
@@ -32,16 +32,6 @@
     }
   },
   "provider": {
-    "google": {
-      "options": {
-        "baseURL": "https://xget.uglyboy.cn/ip/gemini/v1beta"
-      },
-    },
-    "openrouter": {
-      "options": {
-        "baseURL": "https://xget.uglyboy.cn/ip/openrouter/api/v1"
-      },
-    },
     "n1n": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "n1n",
