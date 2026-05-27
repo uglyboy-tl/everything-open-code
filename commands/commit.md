@@ -1,13 +1,13 @@
 ---
 description: 提交当前修改
 agent: git-commiter
-model: deepseek/deepseek-chat
+model: deepseek/deepseek-v4-flash
 subtask: true
 ---
 
 用户指令: $ARGUMENTS
 
-> 本命令在 `git-commiter` agent 下执行。分组原则和消息格式遵循 agent 定义的规范。
+> 本命令在 `git-commiter` agent 下执行。分组原则和消息格式遵循 agent 定义的规范。不要向用户提问，独自完成全部任务。
 
 ---
 
