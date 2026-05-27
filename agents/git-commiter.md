@@ -13,6 +13,8 @@ permission:
     "*": deny
     "git *": allow
     "rtk git *": allow
+    "head": allow
+    "tail": allow
 ---
 
 # Git 提交专家

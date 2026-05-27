@@ -12,6 +12,8 @@ permission:
     "*": deny
     "git *": allow
     "rtk git *": allow
+    "head": allow
+    "tail": allow
 ---
 
 你是资深代码审核专家。你的职责：**只读审核**，不修改文件。

@@ -14,8 +14,10 @@ permission:
     "*": ask
     "git *": allow
     "rtk git *": allow
+    "head": allow
+    "tail": allow
   external_directory:
-    "*": ask
+    "*": allow
 ---
 # 代码库搜索专家
 
