@@ -1,0 +1,1235 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_NAME="Imagine"
+string.base64.encode(){ base64 -w 0 "$1" 2>/dev/null||base64 "$1" 2>/dev/null;}
+string.base64.decode(){ base64 -d 2>/dev/null||base64 -D 2>/dev/null;}
+string.escape.regex(){ printf '%s' "${1:-}"|sed 's/[].[\\^$*+?{}()|]/\\&/g; s/\//\\\//g';}
+string.escape.sed(){ printf '%s' "${1:-}"|sed 's/\\/\\\\/g; s/&/\\&/g; s/|/\\|/g';}
+string.trim(){
+local s="${1#"${1%%[![:space:]]*}"}"
+echo "${s%"${s##*[![:space:]]}"}"
+}
+string.int.check(){ [[ $1 =~ ^-?[0-9]+$ ]];}
+string.natural.check(){ [[ $1 =~ ^[1-9][0-9]*$ ]];}
+string.float.check(){ [[ $1 =~ ^-?[0-9]+\.[0-9]+$ ]];}
+string.is_ascii(){ [[ $1 != *[![:ascii:]]* ]];}
+string.has_ansi(){ [[ $1 == *$'\x1b'* ]];}
+array.len(){
+local -n ref="$1"
+echo "${#ref[@]}"
+}
+array.contains(){
+local -n ref="$1"
+if ((${#ref[@]}<=3));then
+[[ " ${ref[*]} " == *" $2 "* ]]
+else
+local -A lookup=()
+for elem in "${ref[@]}";do
+lookup["$elem"]=1
+done
+[[ -v "lookup[$2]" ]]
+fi
+}
+array.append(){
+local -n array_ref="$1"
+shift
+array_ref+=("$@")
+}
+array.get(){
+local -n ref="$1"
+local len=${#ref[@]}
+(($2>=0&&$2<len))&&echo "${ref[$2]}"||return 1
+}
+array.type(){
+local -r arr="$1"
+local decl
+decl="$(declare -p "$arr" 2>/dev/null)"||return 1
+case "$decl" in
+"declare -A"*)echo "associative";;
+"declare -a"*)echo "indexed";;
+*)return 1
+esac
+}
+array.has_duplicates(){
+local -n ref="$1"
+local -A seen=()
+local elem key
+for elem in "${ref[@]}";do
+key="${elem:-__EMPTY__}"
+[[ -v "seen[$key]" ]]&&return 0
+seen["$key"]=1
+done
+return 1
+}
+ANSI_ESC=$'\033'
+ANSI_CSI="$ANSI_ESC["
+ansi.Color.IsAvailable(){
+local colors
+colors=$(tput colors 2>/dev/null||echo 0)
+[[ $colors -ge 16 ]]&&[[ -t 1 ]]
+}
+ansi.Powerline.IsAvailable(){
+[[ -z ${NO_UNICODE-} ]]&&locale -k LC_CTYPE 2>/dev/null|grep -q 'UTF-8'
+}
+ansi.enable.color(){
+BLACK="${ANSI_CSI}30m"
+RED="${ANSI_CSI}31m"
+GREEN="${ANSI_CSI}32m"
+YELLOW="${ANSI_CSI}33m"
+BLUE="${ANSI_CSI}34m"
+MAGENTA="${ANSI_CSI}35m"
+CYAN="${ANSI_CSI}36m"
+WHITE="${ANSI_CSI}37m"
+BRIGHT_BLACK="${ANSI_CSI}90m"
+BRIGHT_RED="${ANSI_CSI}91m"
+BRIGHT_GREEN="${ANSI_CSI}92m"
+BRIGHT_YELLOW="${ANSI_CSI}93m"
+BRIGHT_BLUE="${ANSI_CSI}94m"
+BRIGHT_MAGENTA="${ANSI_CSI}95m"
+BRIGHT_CYAN="${ANSI_CSI}96m"
+BRIGHT_WHITE="${ANSI_CSI}97m"
+NC="${ANSI_CSI}0m"
+NO_COLOR="${ANSI_CSI}0m"
+}
+ansi.disable.color(){
+BLACK=""
+RED=""
+GREEN=""
+YELLOW=""
+BLUE=""
+MAGENTA=""
+CYAN=""
+WHITE=""
+BRIGHT_BLACK=""
+BRIGHT_RED=""
+BRIGHT_GREEN=""
+BRIGHT_YELLOW=""
+BRIGHT_BLUE=""
+BRIGHT_MAGENTA=""
+BRIGHT_CYAN=""
+BRIGHT_WHITE=""
+NC=""
+NO_COLOR=""
+}
+ansi.enable.style(){
+Bold="${ANSI_CSI}1m"
+Dim="${ANSI_CSI}2m"
+Italics="${ANSI_CSI}3m"
+Underline="${ANSI_CSI}4m"
+Blink="${ANSI_CSI}5m"
+Reverse="${ANSI_CSI}7m"
+Hidden="${ANSI_CSI}8m"
+Strike="${ANSI_CSI}9m"
+NoBold="${ANSI_CSI}21m"
+NoDim="${ANSI_CSI}22m"
+NoItalics="${ANSI_CSI}23m"
+NoUnderline="${ANSI_CSI}24m"
+NoBlink="${ANSI_CSI}25m"
+NoReverse="${ANSI_CSI}27m"
+NoHidden="${ANSI_CSI}28m"
+NoStrike="${ANSI_CSI}29m"
+}
+ansi.disable.style(){
+Bold=""
+Dim=""
+Italics=""
+Underline=""
+Blink=""
+Reverse=""
+Hidden=""
+Strike=""
+NoBold=""
+NoDim=""
+NoItalics=""
+NoUnderline=""
+NoBlink=""
+NoReverse=""
+NoHidden=""
+NoStrike=""
+}
+ansi.enable.powerline(){
+POWERLINE_SEPARATOR=$'\ue0b0'
+POWERLINE_SEPARATOR_THIN=$'\ue0b1'
+POWERLINE_SEPARATOR_LEFT=$'\ue0b2'
+POWERLINE_SEPARATOR_LEFT_THIN=$'\ue0b3'
+POWERLINE_BRANCH=$'\ue0a0'
+POWERLINE_LINE=$'\ue0a1'
+POWERLINE_READONLY=$'\ue0a2'
+POWERLINE_POINTING_ARROW=$'\u27a1'
+POWERLINE_ARROW_RIGHT=$'\u25b6'
+POWERLINE_ARROW_LEFT=$'\u25c0'
+POWERLINE_ARROW_DOWN=$'\u2b07'
+POWERLINE_ARROW_RIGHT_DOWN=$'\u2b0a'
+POWERLINE_PLUS_MINUS=$'\u00b1'
+POWERLINE_REFERS_TO=$'\u27a6'
+POWERLINE_OK=$'\u2714'
+POWERLINE_FAIL=$'\u2718'
+POWERLINE_WARN=$'\u26a0'
+POWERLINE_COG=$'\u2699'
+POWERLINE_HEART=$'\u2764'
+POWERLINE_STAR=$'\u2605'
+}
+ansi.disable.powerline(){
+POWERLINE_SEPARATOR=">"
+POWERLINE_SEPARATOR_THIN=">"
+POWERLINE_SEPARATOR_LEFT="<"
+POWERLINE_SEPARATOR_LEFT_THIN="<"
+POWERLINE_BRANCH="|}"
+POWERLINE_LINE="LN"
+POWERLINE_READONLY="RO"
+POWERLINE_POINTING_ARROW="~"
+POWERLINE_ARROW_RIGHT="->"
+POWERLINE_ARROW_LEFT="<-"
+POWERLINE_ARROW_DOWN="_"
+POWERLINE_ARROW_RIGHT_DOWN=">"
+POWERLINE_PLUS_MINUS="+-"
+POWERLINE_REFERS_TO="*"
+POWERLINE_OK="+"
+POWERLINE_FAIL="x"
+POWERLINE_WARN="!"
+POWERLINE_COG="{*}"
+POWERLINE_HEART="<3"
+POWERLINE_STAR="*"
+}
+ansi.enable(){
+[[ -n ${_ANSI_FORCE_DISABLE-} ]]&&ansi.disable&&return 0
+ansi.Color.IsAvailable&&ansi.enable.color&&ansi.enable.style||{ ansi.disable.color&&ansi.disable.style;}
+ansi.Powerline.IsAvailable&&ansi.enable.powerline||ansi.disable.powerline
+}
+ansi.disable(){
+ansi.disable.color
+ansi.disable.style
+ansi.disable.powerline
+}
+ansi.is.initialized(){
+[[ -n $ANSI_ESC ]]
+}
+ansi.enable
+console.stdout(){ printf "%s\n" "$*";}
+console.stderr(){ printf "%s\n" "$*" >&2;}
+console.repeat(){
+local repeat=${2:-0}
+((repeat<=0))&&return
+local char="$1"
+if [[ ${#char} -eq 1 ]];then
+printf "%*s" "$repeat" ""|tr ' ' "$char"
+else
+local result=""
+for ((i=0; i<repeat; i++));do
+result+="$char"
+done
+printf "%s" "$result"
+fi
+}
+UNDERLINE_CACHE=$(console.repeat "=" 20)
+console.align(){
+local padding=$(($1-$(console.display_width "$2")))
+((padding>0))&&printf "%s%${padding}s%s\n" "$2" "" "${*:3}"||printf "%s%s\n" "$2" "${*:3}"
+}
+console.indent(){ console.align $(($1*2)) "" "${*:2}";}
+console.ansi_width(){
+local width=0 i=0 len=${#1} flag=0
+while ((i<len));do
+local char="${1:$((i++)):1}"
+((flag))&&{
+[[ $char =~ [a-zA-Z] ]]&&flag=0
+continue
+}
+[[ $char == $'\x1b' ]]&&flag=1&&continue
+((width++))
+done
+echo "$width"
+}
+console.mixed_width(){
+local width=0 flag=0 i=0
+local hex_bytes=$(printf "%s" "$1"|od -An -tx1 -v|tr -d ' \n')
+local len=${#hex_bytes}
+while ((i<len));do
+local num=$((0x${hex_bytes:i:2}))
+i=$((i+2))
+((flag))&&{
+(((num>=0x41&&num<=0x5A)||(num>=0x61&&num<=0x7A)))&&flag=0
+continue
+}
+((num==0x1b))&&{
+flag=1
+continue
+}
+((num<=0x7F))&&{
+((width++))
+continue
+}
+((num>=0xC2&&num<=0xDF))&&{
+((width++))
+i=$((i+2))
+continue
+}
+((num>=0xE0&&num<=0xEF))&&{
+((width+=2))
+i=$((i+4))
+continue
+}
+((num>=0xF0&&num<=0xF7))&&{
+((width+=2))
+i=$((i+6))
+}
+done
+echo "$width"
+}
+console.display_width(){
+[[ $1 ]]||{
+echo "0"
+return
+}
+! string.is_ascii "$1"&&console.mixed_width "$1"&&return
+string.has_ansi "$1"&&console.ansi_width "$1"||echo "${#1}"
+}
+console.section(){
+console.stdout "$1:"
+console.stdout "=${UNDERLINE_CACHE:0:$(console.mixed_width "$1")}"
+}
+console.item.title(){
+console.indent "$1" "${*:2}"
+_CONSOLE_INDENT_DEPTH=$(($1+1))
+}
+console.item.item(){
+console.indent "$_CONSOLE_INDENT_DEPTH" "$*"
+}
+console.item.mid(){
+console.item.item "├─" "$*"
+}
+console.item.end(){
+console.item.item "└─" "$*"
+echo ""
+}
+console.footer(){
+console.stdout "========="
+console.stdout "$*"
+}
+: "${_LOG_USE_EXTRA:=false}"
+: "${_LOG_LEVEL:=INFO}"
+declare -gA _LOG_LEVEL_MAP=(
+[DEBUG]=0 [INFO]=1 [WARN]=2 [ERROR]=3)
+declare -gi _LOG_MIN_LEVEL=${_LOG_LEVEL_MAP[$_LOG_LEVEL]}
+log.setLevel(){
+local -r level="${1^^}"
+[[ -v "_LOG_LEVEL_MAP[$level]" ]]||return 1
+export _LOG_MIN_LEVEL=${_LOG_LEVEL_MAP[$level]}
+export _LOG_LEVEL="$level"
+}
+log(){
+local -r level="${1^^}"
+local timestamp
+printf -v timestamp '%(%m-%d %H:%M:%S )T' -1
+local flag
+case "$level" in
+SUCCESS)flag="$GREEN[$level]$NC";;
+INFO)flag="$BLUE[$level]$NC";;
+WARN)flag="$YELLOW[$level]$NC";;
+ERROR)flag="$RED[$level]$NC";;
+DEBUG)flag="$WHITE[$level]$NC";;
+*)flag=""
+esac
+[[ -z $flag ]]||shift
+local prefix extra=""
+[[ $_LOG_USE_EXTRA == true ]]&&extra="${BASH_SOURCE[2]##*/}:${BASH_LINENO[0]}"
+[[ -z $extra ]]||extra="$WHITE($extra)$NC"
+prefix="$WHITE$timestamp$NC$flag$extra"
+console.stderr "$prefix" "$@"
+}
+log.debug(){ ((0>=_LOG_MIN_LEVEL))&&log debug "$@"||true;}
+log.info(){ ((1>=_LOG_MIN_LEVEL))&&log info "$@"||true;}
+log.success(){ ((1>=_LOG_MIN_LEVEL))&&log success "$@"||true;}
+log.warn(){ ((2>=_LOG_MIN_LEVEL))&&log warn "$@"||true;}
+log.error(){ ((3>=_LOG_MIN_LEVEL))&&log error "$@"||true;}
+map.len(){
+local -n ref="$1"
+echo "${#ref[@]}"
+}
+map.contains(){
+local -n ref="$1"
+[[ -v "ref[$2]" ]]
+}
+map.get(){
+local -n ref="$1"
+[[ -v "ref[$2]" ]]&&echo "${ref[$2]}"||return 1
+}
+_USAGE_SCRIPT_FILENAME=${0##*/}
+_USAGE_SCRIPT_NAME=${SCRIPT_NAME:-$_USAGE_SCRIPT_FILENAME}
+_USAGE_SCRIPT_DESC=""
+usage.name.set(){ _USAGE_SCRIPT_NAME="$1";}
+usage.description.set(){ [[ -n $1 ]]&&_USAGE_SCRIPT_DESC="$1";}
+usage.title(){
+local _title="$_USAGE_SCRIPT_NAME"
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&_title="$_title - $_ARGS_CURRENT_SUBCOMMAND"
+[[ -n $_USAGE_SCRIPT_DESC ]]&&_title="$_title - $_USAGE_SCRIPT_DESC"
+console.stdout "$Bold$_title$NC"
+}
+usage.usage(){
+local _usage_line="${BRIGHT_BLUE}Usage:$NC $BRIGHT_CYAN$_USAGE_SCRIPT_FILENAME$NC"
+local subcommand="${_ARGS_CURRENT_SUBCOMMAND:-<subcommand>}"
+((${1:-0}))&&_usage_line="$_usage_line $BRIGHT_MAGENTA$subcommand$NC"
+((${2:-0}))&&_usage_line="$_usage_line $BRIGHT_YELLOW[OPTIONS]$NC"
+((${3:-0}))&&_usage_line="$_usage_line $BRIGHT_YELLOW[ARGUMENTS]$NC"
+console.stdout "$_usage_line"
+}
+usage.section(){
+echo ""
+console.stdout "$Bold$BRIGHT_BLUE$1$NC:"
+}
+usage.section.items(){
+local -n _items_ref="$1"
+local -a _keys=("${!_items_ref[@]}")
+local _max_width=20
+for _key in "${_keys[@]}";do
+((${#_key}>_max_width))&&_max_width=${#_key}
+done
+((_max_width+=4))
+for _key in "${_keys[@]}";do
+console.align "$_max_width" "  $BRIGHT_CYAN$_key$NC" "${_items_ref[$_key]}"
+done
+}
+usage.footer(){
+[[ ${#_ARGS_SUBCOMMANDS[@]} -eq 0 ]]&&return 0
+echo ""
+console.stdout "${BRIGHT_BLACK}Use '$BRIGHT_WHITE$_USAGE_SCRIPT_FILENAME <subcommand> --help$BRIGHT_BLACK' for subcommand help$NC"
+}
+usage.show(){
+local -n _opts_ref=$1
+local -n _args_ref=$2
+local -n _examples_ref=$3
+local -n _notices_ref=$4
+local -n _cmd_ref="_ARGS_CURRENT_SUBCOMMAND"
+local -n _cmd_desc_ref="_ARGS_SUBCOMMANDS_DESC"
+echo ""
+usage.title
+echo ""
+usage.usage $(($(map.len _cmd_desc_ref)>0)) $(($(map.len _opts_ref)>0)) $(($(map.len _args_ref)>0))
+[[ -z $_cmd_ref ]]&&[[ $(map.len _cmd_desc_ref) -gt 0 ]]&&usage.section "Commands"&&usage.section.items _cmd_desc_ref
+[[ $(map.len _opts_ref) -gt 0 ]]&&usage.section "Options"&&usage.section.items _opts_ref
+[[ $(map.len _args_ref) -gt 0 ]]&&usage.section "Arguments"&&usage.section.items _args_ref
+[[ $(map.len _examples_ref) -gt 0 ]]&&usage.section "Examples"&&usage.section.items _examples_ref
+[[ $(map.len _notices_ref) -gt 0 ]]&&usage.section "Notices"&&usage.section.items _notices_ref
+[[ -z $_cmd_ref ]]&&usage.footer||true
+}
+usage.version(){ console.stdout "$BRIGHT_CYAN$_USAGE_SCRIPT_NAME$NC version $BRIGHT_GREEN${VERSION:-null}$NC";}
+declare -gA _ARGS_SUBCOMMANDS=()
+declare -gA _ARGS_SUBCOMMANDS_DESC=()
+declare -ga _ARGS_OPTIONS=()
+declare -gA _ARGS_OPTIONS_SWITCH=()
+declare -gA _ARGS_OPTIONS_TYPE=()
+declare -g _ARGS_CURRENT_SUBCOMMAND=""
+declare -gA _ARGS_HELP_OPTIONS=()
+declare -gA _ARGS_HELP_ARGS=()
+declare -gA _ARGS_HELP_EXAMPLES=()
+declare -gA _ARGS_HELP_NOTICES=()
+args.name(){ usage.name.set "$1";}
+args.description(){ usage.description.set "$1"||return 1;}
+args.init(){
+_ARGS_OPTIONS=()
+declare -gA _ARGS_OPTIONS_SWITCH=()
+declare -gA _ARGS_OPTIONS_TYPE=()
+declare -gA _ARGS_HELP_OPTIONS=()
+declare -gA _ARGS_HELP_ARGS=()
+declare -gA _ARGS_HELP_EXAMPLES=()
+declare -gA _ARGS_HELP_NOTICES=()
+usage.description.set "${1:-}"||{ [[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&usage.description.set "${_ARGS_SUBCOMMANDS_DESC[$_ARGS_CURRENT_SUBCOMMAND]}";}
+args.add_options "help" "h" "显示帮助信息"
+}
+args.add_options(){
+local type="${4:-}" key subcommand
+: "${type:="NONE"}"
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&subcommand=" $_ARGS_CURRENT_SUBCOMMAND"||subcommand=""
+case ${1^^} in
+"ARG")[[ -n $2 ]]&&_ARGS_HELP_ARGS["$2"]="$3"&&_ARGS_OPTIONS_TYPE["$2"]="$type";;
+"EXAMPLE")_ARGS_HELP_EXAMPLES["$(basename "$0")$subcommand $2"]="$3";;
+"NOTICE")_ARGS_HELP_NOTICES+=(["$2"]="");;
+*)_ARGS_OPTIONS_TYPE["$1"]="$type"
+_ARGS_OPTIONS+=("$1")
+[[ -n $2 ]]&&{
+_ARGS_OPTIONS_SWITCH["$1"]="$2"
+_ARGS_OPTIONS_SWITCH["$2"]="$1"
+_ARGS_OPTIONS+=("$2")
+}
+key=""
+[[ -n $2 ]]&&key="-$2, "
+key+="--$1"
+[[ -n ${4+x} ]]&&key+=" $type"
+_ARGS_HELP_OPTIONS["$key"]="$3"
+esac
+}
+args.add_subcommand(){
+[[ -n $_ARGS_CURRENT_SUBCOMMAND ]]&&return 0
+_ARGS_SUBCOMMANDS["$1"]="$3"
+_ARGS_SUBCOMMANDS_DESC["$1"]="$2"
+}
+args.dispatch(){
+local cmd="${1:-}"
+[[ -v "_ARGS_SUBCOMMANDS[$cmd]" ]]&&{
+local handler="${_ARGS_SUBCOMMANDS[$cmd]}"
+_ARGS_CURRENT_SUBCOMMAND="$cmd"
+shift
+"$handler" "$@"
+exit $?
+}
+return 1
+}
+args.process(){
+[[ -z $_ARGS_CURRENT_SUBCOMMAND ]]&&args.dispatch "$@"&&exit 0
+args.parse "$@"
+args.verify||{
+args.show_help
+exit 1
+}
+args.has "-h" "--help"&&args.show_help&&exit 0||true
+}
+args.parse(){
+declare -ga _ARGS_OPTS=()
+declare -ga _ARGS_ARGS=()
+declare -gA _ARGS_OPT_ARGS=()
+local end=0 last=""
+for arg in "$@";do
+if [[ $arg == '--' ]];then
+end=1
+last=""
+elif ((!end))&&[[ $arg =~ ^- ]];then
+if [[ $arg =~ ^-[a-zA-Z]{2,}$ ]];then
+local c="${arg:1}"
+for ((i=0; i<${#c}; i++));do
+last="-${c:i:1}"
+_ARGS_OPTS+=("$last")
+done
+else
+_ARGS_OPTS+=("$arg")
+last="$arg"
+fi
+else
+_ARGS_ARGS+=("$arg")
+[[ $last ]]&&_ARGS_OPT_ARGS["$last"]=$((${#_ARGS_ARGS[@]}-1))&&last=""
+fi
+done
+return 0
+}
+args.verify(){
+for option in "${_ARGS_OPTS[@]}";do
+local opt="${option##*-}" another
+array.contains _ARGS_OPTIONS "$opt"||{
+log.error "未知选项: \"$option\""
+return 1
+}
+array.contains _ARGS_OPTIONS_SWITCH "$opt"&&{
+another=${_ARGS_OPTIONS_SWITCH[$opt]}
+args.has "-$another" "--$another"&&log.error "重复选项"&&return 1
+[[ $option =~ ^-[a-zA-Z]$ ]]&&opt=$another
+}
+case ${_ARGS_OPTIONS_TYPE[$opt]} in
+"NONE")unset "_ARGS_OPT_ARGS[$option]" 2>/dev/null||true;;
+*)[[ -z ${_ARGS_OPT_ARGS[$option]+x} ]]&&log.error "选项 $option 需要参数"&&return 1
+esac
+done
+array.has_duplicates _ARGS_OPTS&&log.error "重复选项"&&return 1
+local -a _ARGS_TEMP_ARGS=("${_ARGS_ARGS[@]}")
+for value in "${_ARGS_OPT_ARGS[@]}";do
+unset "_ARGS_TEMP_ARGS[$value]"
+done
+declare -ga _ARGS_FINAL_ARGS=("${_ARGS_TEMP_ARGS[@]}")
+[[ $(map.len _ARGS_HELP_ARGS) -eq 0 ]]&&[[ $(array.len _ARGS_FINAL_ARGS) -gt 0 ]]&&log.error "位置参数错误"&&return 1||true
+}
+args.has(){
+for o in "$@";do
+array.contains _ARGS_OPTS "$o"&&return 0
+done
+return 1
+}
+args.get(){
+for o in "$@";do
+i=$(args.opt.arg_index "$o")
+if [[ $i ]];then
+args.arg "$i"
+return 0
+fi
+done
+return 1
+}
+args.args(){ echo "_ARGS_FINAL_ARGS";}
+args.arg(){ array.get _ARGS_ARGS "$1";}
+args.opt.arg_index(){ echo "${_ARGS_OPT_ARGS[$1]:-}";}
+args.show_help(){
+usage.show _ARGS_HELP_OPTIONS _ARGS_HELP_ARGS _ARGS_HELP_EXAMPLES _ARGS_HELP_NOTICES
+}
+system.command.exist(){ command -v "$1" >/dev/null 2>&1;}
+system.command.required(){ ! system.command.exist "$1"&&log.error "This module required \`$1\` command."&&exit 1||return 0;}
+system.command.result(){
+local result
+result=$(eval "$1" 2>&1)||{
+local exit_code=$?
+if [[ $exit_code -eq 1 ]]&&[[ $1 == *grep* ]];then
+result=""
+else
+result="（命令执行失败，退出码: $exit_code）"
+fi
+}
+[[ -z $result ]]&&result="（无输出）"
+echo "$result"
+}
+system.os(){
+[[ -n ${_SYSTEM_OS+x} ]]&&echo "$_SYSTEM_OS"&&return 0
+case "$OSTYPE" in
+darwin*)echo "macos";;
+linux*)echo "linux";;
+msys*|cygwin*)echo "windows";;
+bsd*)echo "bsd";;
+solaris*)echo "solaris";;
+*)echo"unknown"
+esac
+}
+_SYSTEM_OS="$(system.os)"
+system.arch(){
+[[ -n ${_SYSTEM_ARCH+x} ]]&&echo "$_SYSTEM_ARCH"&&return 0
+local -r arch="$(uname -m)"
+case "$arch" in
+x86_64|x64|amd64)echo "amd64";;
+aarch64|arm64)echo "arm64";;
+armv7l|armhf)echo "armhf";;
+i686|i386|i586)echo "i386"
+esac
+}
+_SYSTEM_ARCH="$(system.arch)"
+fs.file.exists(){ [[ -f $1 ]];}
+fs.dir.exists(){ [[ -d $1 ]];}
+fs.write(){
+local _f="$1"
+mkdir -p "$(dirname "$1")"
+shift
+(($#>0))&&printf "%s\n" "$@" >"$_f"||: >"$_f"
+}
+fs.find(){ local _n=$(awk -v s="${3:-1}" -v p="$2" 'NR>=s && $0~p{print NR; exit}' "$1" 2>/dev/null)&&[[ $_n ]]&&echo "$_n"||return 1;}
+fs.replace(){
+local _repl=$(string.escape.sed "$3")
+[[ -n ${4:-} ]]&&sed -i "$4,/$2/{/$2/{s|.*|$_repl|}}" "$1"||sed -i "/$2/{s|.*|$_repl|}" "$1"
+}
+fs.insert(){ sed -i "/$2/a\\$3" "$1" 2>/dev/null;}
+fs.rmline(){ [[ -n $4 ]]&&sed -i "$4,/$2/{/$2/d}" "$1" 2>/dev/null||sed -i "/$2/d" "$1" 2>/dev/null;}
+fs.cleanup(){ ls -t "$1"* 2>/dev/null|tail -n +$((${2:-3}+1))|xargs -r rm -f;}
+fs.mktemp(){ mktemp "$@" 2>/dev/null||{ log.error "Failed to create temporary file"&&return 1;};}
+fs.file.extract(){
+local path=$(realpath "$1") base=$(basename "$1")
+builtin cd "$2" >/dev/null||return 1
+case "${base,,}" in
+*.zip|*.war|*.jar|*.ear|*.sublime-package|*.ipa|*.ipsw|*.xpi|*.apk|*.aar|*.whl|*.vsix|*.crx|*.pk3|*.pk4)unzip -q "$path";;
+*.tar.gz|*.tgz)tar -zxf "$path";;
+*.tar.bz2|*.tbz|*.tbz2|*.tar.bz)tar -jxf "$path";;
+*.tar.xz|*.txz)tar -xJf "$path";;
+*.tar)tar -xf "$path";;
+*.gz)gzip -dc "$path" >"${base%.gz}";;
+*.bz2)bzip2 -dc "$path" >"${base%.bz2}";;
+*.xz)xz -dc "$path" >"${base%.xz}";;
+*)chmod +x "$path"
+cp "$path" "${base%%.*}"
+esac
+}
+declare -g _REQUESTS_TIMEOUT=30
+declare -g _REQUESTS_USER_AGENT="bashlet-requests/1.0"
+declare -g _REQUESTS_BASE_URL=""
+declare -gA _REQUESTS_HEADERS=()
+declare -gA _REQUESTS_AUTH=()
+declare -g _REQUESTS_CURL=""
+declare -g _REQUESTS_JQ=""
+requests.init(){
+declare -ga _REQUESTS_CURL_EXTRA=("$@")
+system.command.required "curl"&&_REQUESTS_CURL="$(command -v curl)"
+system.command.required "jq"&&_REQUESTS_JQ="$(command -v jq)"
+_REQUESTS_HEADERS=(
+["Accept"]="*/*"
+["Accept-Encoding"]="gzip, deflate"
+["Connection"]="keep-alive")
+log.debug "requests module initialized: curl=$_REQUESTS_CURL, jq=$_REQUESTS_JQ"
+return 0
+}
+requests.curl.check(){
+[[ -n $_REQUESTS_CURL ]]||_REQUESTS_CURL="$(command -v curl)"
+}
+requests.jq.check(){
+[[ -n $_REQUESTS_JQ ]]||_REQUESTS_JQ="$(command -v jq)"
+}
+requests.curl.configure(){
+local array_name="$1"
+local timeout="${2:-}"
+[[ -n $timeout ]]&&array.append "$array_name" "--max-time" "$timeout"
+array.append "$array_name" "-A" "$_REQUESTS_USER_AGENT"
+local key
+for key in "${!_REQUESTS_HEADERS[@]}";do
+array.append "$array_name" "-H" "$key: ${_REQUESTS_HEADERS[$key]}"
+done
+if [[ ${#_REQUESTS_AUTH[@]} -gt 0 ]];then
+local auth_key
+for auth_key in "${!_REQUESTS_AUTH[@]}";do
+array.append "$array_name" "-H" "$auth_key: ${_REQUESTS_AUTH[$auth_key]}"
+done
+fi
+}
+requests.request.build(){
+local -n cmd_ref="$1"
+local -r method="$2"
+local -r url="$3"
+local -r body="$4"
+local -r content_type="${5:-$(requests.content_type.detect "$4")}"
+cmd_ref=("$_REQUESTS_CURL" "-s" "--compressed" "-X" "$method")
+cmd_ref+=("${_REQUESTS_CURL_EXTRA[@]}")
+requests.curl.configure cmd_ref "$_REQUESTS_TIMEOUT"
+if [[ -n $body ]];then
+cmd_ref+=("-d" "$body")
+[[ -n $content_type ]]&&cmd_ref+=("-H" "Content-Type: $content_type")
+fi
+local full_url="$url"
+[[ -n $_REQUESTS_BASE_URL ]]&&full_url="$_REQUESTS_BASE_URL$url"
+cmd_ref+=("$full_url")
+}
+requests.request(){
+local -r method="$1"
+local -r url="$2"
+local -r body="$3"
+local -r content_type="$4"
+requests.curl.check
+requests.jq.check
+local curl_cmd
+requests.request.build curl_cmd "$method" "$url" "$body" "$content_type"||return 1
+local temp_body="$(fs.mktemp)"||return 1
+local temp_headers="$(fs.mktemp)"||return 1
+trap 'rm -f "${temp_body:-}" "${temp_headers:-}"' EXIT
+local status_code=$("${curl_cmd[@]}" -w "%{http_code}" -D "$temp_headers" -o "$temp_body" 2>/dev/null)
+local body_base64="$(string.base64.encode "$temp_body")"
+local headers_json="$("$_REQUESTS_JQ" -Rs 'split("\n") | map(select(length > 0 and test(":"))) | map(split(": ") | {(.[0]): .[1] | rtrimstr("\r")}) | add // {}' "$temp_headers")"
+local success="false"
+[[ $status_code =~ ^2[0-9][0-9]$ ]]&&success="true"
+echo "{\"status_code\":$status_code,\"headers\":$headers_json,\"body\":\"$body_base64\",\"success\":$success}"
+}
+requests.download(){
+requests.curl.check
+local curl_cmd=("$_REQUESTS_CURL" "-L")
+requests.curl.configure curl_cmd
+curl_cmd+=("-o" "$2")
+[[ ${3:-true} == "true" ]]&&curl_cmd+=("--progress-bar")
+[[ ${4:-true} == "true" ]]&&curl_cmd+=("-C" "-")
+"${curl_cmd[@]}" "$1"
+}
+requests.sse(){
+local -r callback="$1"
+local -r method="$2"
+local -r url="$3"
+local -r body="$4"
+local -r content_type="${5:-$(requests.content_type.detect "$4")}"
+requests.curl.check
+local curl_cmd
+requests.request.build curl_cmd "$method" "$url" "$body" "$content_type"||return 1
+curl_cmd+=("-N")
+"${curl_cmd[@]}"|while IFS= read -r line;do
+[[ $line =~ ^data:\ (.+) ]]&&"$callback" "${BASH_REMATCH[1]}"
+done
+}
+requests._urlencode(){
+"$_REQUESTS_JQ" -nr --arg str "$1" '$str | @uri'
+}
+requests.content_type.detect(){
+[[ $1 =~ ^\{.*\}$ ]]&&echo "application/json"&&return 0
+[[ $1 =~ ^\[.*\]$ ]]&&echo "application/json"&&return 0
+[[ $1 =~ ^[a-zA-Z0-9_-]+=[^\&]+(\&[a-zA-Z0-9_-]+=[^\&]+)*$ ]]&&echo "application/x-www-form-urlencoded"&&return 0
+echo ""
+}
+requests.body.build(){
+local -n ref="$1"
+local first=true
+requests.jq.check
+if [[ ${2:-form} == "json" ]];then
+printf "{"
+for key in "${!ref[@]}";do
+$first||printf ","
+printf '"%s":"%s"' "$key" "${ref[$key]}"
+first=false
+done
+printf "}\n"
+else
+for key in "${!ref[@]}";do
+$first||printf "&"
+printf '%s=%s' "$(requests._urlencode "$key")" "$(requests._urlencode "${ref[$key]}")"
+first=false
+done
+printf "\n"
+fi
+}
+requests.query.build(){
+local query="" first=true
+for param in "$@";do
+local key="${param%%=*}" value="${param#*=}"
+if $first;then
+query="?$(requests._urlencode "$key")=$(requests._urlencode "$value")"
+first=false
+else
+query="$query&$(requests._urlencode "$key")=$(requests._urlencode "$value")"
+fi
+done
+echo "$query"
+}
+requests.get(){ requests.request "GET" "$1$(requests.query.build "${@:2}")" "" "";}
+requests.post(){ requests.request "POST" "$1" "$2" "${3:-}";}
+requests.put(){ requests.request "PUT" "$1" "$2" "${3:-}";}
+requests.delete(){ requests.request "DELETE" "$1" "" "";}
+requests.patch(){ requests.request "PATCH" "$1" "$2" "${3:-}";}
+requests.head(){ requests.request "HEAD" "$1" "" "";}
+requests.options(){ requests.request "OPTIONS" "$1" "" "";}
+requests.status_code(){ "$_REQUESTS_JQ" -r '.status_code' <<<"$1";}
+requests.headers(){ [[ -n ${2:-} ]]&&"$_REQUESTS_JQ" -r --arg name "$2" '.headers[$name] // empty' <<<"$1"||"$_REQUESTS_JQ" -r '.headers' <<<"$1";}
+requests.text(){ "$_REQUESTS_JQ" -r '.body' <<<"$1"|string.base64.decode;}
+requests.json(){
+local -r body_text="$(requests.text "$1")"
+[[ -n ${2:-} ]]&&"$_REQUESTS_JQ" -r "$2" <<<"$body_text"||echo "$body_text"
+}
+requests.success(){ "$_REQUESTS_JQ" -r '.success' <<<"$1";}
+requests.raise_for_status(){ [[ "$(requests.success "${1:-}")" == "true" ]]||{ log.error "HTTP error: status code $(requests.status_code "${1:-}")"&&return 1;};}
+requests.timeout(){ string.natural.check "$1"&&_REQUESTS_TIMEOUT="$1"||{ log.error "timeout must be a positive integer"&&return 1;};}
+requests.headers.append(){
+local key="${1:-}"
+shift
+while [[ -n $key ]];do
+local value="$1"
+shift
+_REQUESTS_HEADERS["$key"]="$value"
+log.debug "default header set: $key: $value"
+key="${1:-}"
+shift||true
+done
+}
+requests.base_url(){ _REQUESTS_BASE_URL="$1";}
+requests.headers.clear(){ _REQUESTS_HEADERS=();}
+requests.auth(){ _REQUESTS_AUTH["Authorization"]="Basic $(jq -nr --arg c "$1:$2" '$c | @base64')";}
+requests.auth_bearer(){ _REQUESTS_AUTH["Authorization"]="Bearer $1";}
+VERSION="0.2.0"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
+declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao")
+declare -gA PROVIDER_DEFAULT_MODEL
+PROVIDER_DEFAULT_MODEL["openai"]="gpt-image-1"
+PROVIDER_DEFAULT_MODEL["google"]="imagen-4.0-fast-generate-001"
+PROVIDER_DEFAULT_MODEL["dashscope"]="qwen-image-plus"
+PROVIDER_DEFAULT_MODEL["zai"]="glm-image"
+PROVIDER_DEFAULT_MODEL["minimax"]="image-01"
+PROVIDER_DEFAULT_MODEL["doubao"]="doubao-seedream-5-0-260128"
+declare -gA PROVIDER_DEFAULT_REF_MODEL
+PROVIDER_DEFAULT_REF_MODEL["google"]="gemini-2.5-flash-image"
+PROVIDER_DEFAULT_REF_MODEL["minimax"]="image-01"
+PROVIDER_DEFAULT_REF_MODEL["dashscope"]="wan2.7-image-pro"
+PROVIDER_DEFAULT_REF_MODEL["doubao"]="doubao-seedream-5-0-260128"
+declare -gA PROVIDER_API_HOST
+PROVIDER_API_HOST["openai"]="api.openai.com"
+PROVIDER_API_HOST["google"]="generativelanguage.googleapis.com"
+PROVIDER_API_HOST["dashscope"]="dashscope.aliyuncs.com"
+PROVIDER_API_HOST["zai"]="api.z.ai"
+PROVIDER_API_HOST["minimax"]="api.minimaxi.com"
+PROVIDER_API_HOST["doubao"]="ark.cn-beijing.volces.com"
+declare -gA PROVIDER_XGET_PREFIX
+PROVIDER_XGET_PREFIX["openai"]="openai"
+PROVIDER_XGET_PREFIX["google"]="gemini"
+PROVIDER_XGET_PREFIX["dashscope"]=""
+PROVIDER_XGET_PREFIX["zai"]=""
+PROVIDER_XGET_PREFIX["minimax"]=""
+PROVIDER_XGET_PREFIX["doubao"]=""
+declare -gA PROVIDER_API_KEY_ENV
+PROVIDER_API_KEY_ENV["openai"]="OPENAI_API_KEY"
+PROVIDER_API_KEY_ENV["google"]="GOOGLE_API_KEY"
+PROVIDER_API_KEY_ENV["dashscope"]="DASHSCOPE_API_KEY"
+PROVIDER_API_KEY_ENV["zai"]="ZAI_API_KEY"
+PROVIDER_API_KEY_ENV["minimax"]="MINIMAX_API_KEY"
+PROVIDER_API_KEY_ENV["doubao"]="ARK_API_KEY"
+declare -gA ASPECT_RATIO_SIZES=(
+["1:1"]="1024*1024"
+["16:9"]="1792*1024"
+["9:16"]="1024*1792"
+["4:3"]="1408*1056"
+["3:4"]="1056*1408"
+["2.35:1"]="2048*872")
+declare -gA PROVIDER_MODEL_LIST
+PROVIDER_MODEL_LIST["minimax"]="image-01\nimage-01-plus\nimage-02\nvideo-01"
+_resolve_output_path(){
+local output="$1" provider="$2"
+local timestamp
+timestamp=$(date +%Y%m%d_%H%M%S)
+if [[ -z $output ]];then
+echo "${provider}_$timestamp.png"
+return
+fi
+if [[ $output == */ ]]||[[ -d $output ]];then
+mkdir -p "$output"
+echo "${output%/}/${provider}_$timestamp.png"
+return
+fi
+echo "$output"
+}
+_resolve_image_size(){
+local size="$1" ar="$2"
+[[ -n $size ]]&&echo "$size"|tr 'x' '*'&&return
+[[ -n $ar ]]&&[[ -v ASPECT_RATIO_SIZES[$ar] ]]&&echo "${ASPECT_RATIO_SIZES[$ar]}"&&return
+echo "2048*872"
+}
+_resolve_base_url(){
+local provider="$1"
+local xget_base="${XGET_BASE_URL:-}"
+local xget_prefix="${PROVIDER_XGET_PREFIX[$provider]:-}"
+if [[ -n $xget_base && -n $xget_prefix ]];then
+echo "$xget_base/ip/$xget_prefix"
+else
+echo "https://${PROVIDER_API_HOST[$provider]}"
+fi
+}
+_init_provider_api(){
+local provider="$1"
+requests.init
+requests.timeout 120
+requests.base_url "$(_resolve_base_url "$provider")"
+local key_env="${PROVIDER_API_KEY_ENV[$provider]}"
+local key="${!key_env:-}"
+[[ -n $key ]]||{
+log.error "$key_env not set - add to .env or export it"
+return 1
+}
+if [[ $provider == "google" ]];then
+requests.headers.append "x-goog-api-key" "$key"
+else
+requests.auth_bearer "$key"
+fi
+}
+_download_images(){
+local urls="$1" output="$2"
+local i=0
+while IFS= read -r url;do
+[[ -z $url ]]&&continue
+local outfile="$output"
+if [[ $i -gt 0 ]];then
+local base="${output%.*}" ext="${output##*.}"
+outfile="${base}_$i.$ext"
+fi
+log.info "Downloading image $((i+1))..."
+requests.download "$url" "$outfile"
+log.info "Saved: $outfile"
+((i++))
+done <<<"$urls"
+}
+_get_mime_type(){
+local ext="${1##*.}"
+case "${ext,,}" in
+jpg|jpeg)echo "image/jpeg";;
+png)echo "image/png";;
+webp)echo "image/webp";;
+*)log.error "Unsupported image format for reference: $1 (jpg/jpeg/png/webp only)"
+return 1
+esac
+}
+_ref_build_array(){
+local ref="$1" filter="$2"
+local result='[]' ref_path mime
+IFS=',' read -ra ref_paths <<<"$ref"
+for ref_path in "${ref_paths[@]}";do
+[[ -f $ref_path ]]||{
+log.error "Reference image not found: $ref_path"
+return 1
+}
+mime=$(_get_mime_type "$ref_path")||return 1
+local tmpfile
+tmpfile=$(mktemp)||return 1
+string.base64.encode "$ref_path"|tr -d '\n' >"$tmpfile"
+result=$(echo "$result"|jq --rawfile b64 "$tmpfile" --arg mime "$mime" "$filter")
+rm -f "$tmpfile"
+done
+echo "$result"
+}
+_provider_generate(){
+local provider="$1" prompt="$2" output="$3" model="$4" size="$5" count="$6" seed="$7" negative="$8"
+local quality="$9" style="${10}" ref="${11}"
+_init_provider_api "$provider"||return 1
+if [[ -n $ref ]];then
+model="${model:-${PROVIDER_DEFAULT_REF_MODEL[$provider]:-${PROVIDER_DEFAULT_MODEL[$provider]}}}"
+else
+model="${model:-${PROVIDER_DEFAULT_MODEL[$provider]}}"
+fi
+count="${count:-1}"
+local body api_path
+local is_base64=false
+case $provider in
+openai)[[ $model == "dall-e-3" && $count -gt 1 ]]&&{
+log.warn "DALL-E 3 only supports n=1, forcing count=1"
+count=1
+}
+local sz="${size//\*/x}"
+api_path="/v1/images/generations"
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$count" '{model: $m, prompt: $p, n: $n, size: $s}')
+[[ -n $quality ]]&&body=$(echo "$body"|jq --arg q "$quality" '.quality = $q')
+[[ -n $style ]]&&body=$(echo "$body"|jq --arg s "$style" '.style = $s')
+[[ $model != "dall-e-3" && $model != "dall-e-2" ]]&&is_base64=true
+;;
+google)if
+[[ -n $ref ]]
+then
+local parts
+parts=$(_ref_build_array "$ref" '. += [{inlineData: {mimeType: $mime, data: $b64}}]')||return 1
+parts=$(echo "$parts"|jq --arg p "$prompt" '. += [{text: $p}]')
+api_path="/v1beta/models/$model:generateContent"
+body=$(echo "$parts"|jq --argjson n "$count" '{
+          contents: [{role: "user", parts: .}],
+          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
+        }')
+else
+api_path="/v1beta/models/$model:predict"
+body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
+          instances: [{prompt: $p}],
+          parameters: {sampleCount: $n}
+        }')
+fi
+is_base64=true
+;;
+dashscope)api_path="/api/v1/services/aigc/multimodal-generation/generation"
+if [[ -n $ref ]];then
+local content
+content=$(_ref_build_array "$ref" '. += [{image: ("data:\($mime);base64," + $b64)}]')||return 1
+content=$(echo "$content"|jq --arg p "$prompt" '. += [{text: $p}]')
+body=$(echo "$content"|jq --arg m "$model" --arg s "$size" '{
+          model: $m,
+          input: { messages: [{ role: "user", content: . }] },
+          parameters: { size: $s, n: 1, watermark: false }
+        }')
+count=1
+else
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$size" --argjson n "$count" '{
+          model: $m,
+          input: { messages: [{ role: "user", content: [{ text: $p }] }] },
+          parameters: { size: $s, n: $n, prompt_extend: true, watermark: false }
+        }')
+[[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.parameters.seed = $seed')
+[[ -n $negative ]]&&body=$(echo "$body"|jq --arg neg "$negative" '.parameters.negative_prompt = $neg')
+fi
+;;
+zai)local sz="${size//\*/x}"
+api_path="/api/paas/v4/images/generations"
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$count" '{model: $m, prompt: $p, n: $n, size: $s}')
+;;
+minimax)[[ $count -gt 9 ]]&&{
+log.warn "MiniMax supports at most 9 images per request, capping count=9"
+count=9
+}
+api_path="/v1/image_generation"
+if [[ -n $ref ]];then
+local sr
+sr=$(_ref_build_array "$ref" '. += [{type: "character", image_file: ("data:\($mime);base64," + $b64)}]')||return 1
+body=$(echo "$sr"|jq --arg m "$model" --arg p "$prompt" --argjson n "$count" '{
+          model: $m, prompt: $p, n: $n, response_format: "base64", subject_reference: .
+        }')
+is_base64=true
+else
+body=$(jq -n --arg m "$model" --arg p "$prompt" --argjson n "$count" '{model: $m, prompt: $p, n: $n}')
+fi
+;;
+doubao)local sz
+if [[ -z $size || $size == "2048*872" ]];then
+sz="2K"
+else
+sz="${size//\*/x}"
+fi
+api_path="/api/v3/images/generations"
+if [[ -n $ref ]];then
+local image_data
+image_data=$(_ref_build_array "$ref" '. += [("data:\($mime);base64," + $b64)]')||return 1
+body=$(echo "$image_data"|jq --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$count" '{
+          model: $m, prompt: $p, size: $s, n: $n, response_format: "url", watermark: false, image: (if length == 1 then .[0] else . end)
+        }')
+else
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$count" '{
+          model: $m, prompt: $p, size: $s, n: $n, response_format: "url", watermark: false
+        }')
+fi
+[[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
+[[ -n $negative ]]&&body=$(echo "$body"|jq --arg neg "$negative" '.negative_prompt = $neg')
+esac
+log.info "[$provider] model: $model / size: ${size:-auto} / n: $count"
+local response bodyfile
+bodyfile=$(mktemp)||return 1
+printf '%s' "$body" >"$bodyfile"
+response=$(requests.post "$api_path" "@$bodyfile" "application/json")
+rm -f "$bodyfile"
+requests.raise_for_status "$response"||return 1
+if [[ $provider == "minimax" ]];then
+local status
+status=$(requests.json "$response" '.base_resp.status_code // 1')
+if [[ $status != 0 ]];then
+local msg
+msg=$(requests.json "$response" '.base_resp.status_msg // "Unknown error"')
+log.error "MiniMax error: $msg"
+return 1
+fi
+fi
+local images
+case $provider in
+openai)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty');;
+google)images=$(requests.json "$response" '(try .predictions[].bytesBase64Encoded) // (try .candidates[].content.parts[].inlineData.data) // empty');;
+dashscope)images=$(requests.json "$response" '.output.choices[].message.content[].image // empty');;
+zai)images=$(requests.json "$response" '.data[].url // empty');;
+minimax)images=$(requests.json "$response" '.data.image_base64[] // .data.image_urls[] // empty');;
+doubao)images=$(requests.json "$response" '.data[].url // empty')
+esac
+[[ -z $images ]]&&{
+log.error "No images in response"
+return 1
+}
+if $is_base64;then
+local i=0
+while IFS= read -r b64;do
+[[ -z $b64 ]]&&continue
+local outfile="$output"
+if [[ $i -gt 0 ]];then
+local base="${output%.*}" ext="${output##*.}"
+outfile="${base}_$i.$ext"
+fi
+log.info "Decoding image $((i+1))..."
+echo "$b64"|string.base64.decode >"$outfile"
+log.info "Saved: $outfile"
+((i++))
+done <<<"$images"
+else
+_download_images "$images" "$output"
+fi
+}
+cmd_generate(){
+args.init "生成图像"
+args.add_options "prompt" "p" "提示词" "STRING"
+args.add_options "promptfile" "P" "从文件读取提示词" "STRING"
+args.add_options "output" "o" "输出路径" "STRING"
+args.add_options "provider" "" "服务提供商" "STRING"
+args.add_options "model" "m" "模型 ID" "STRING"
+args.add_options "ar" "" "宽高比" "STRING"
+args.add_options "size" "s" "显式尺寸" "STRING"
+args.add_options "quality" "q" "画质预设" "STRING"
+args.add_options "count" "n" "生成数量" "NUMBER"
+args.add_options "seed" "" "随机种子" "NUMBER"
+args.add_options "negative-prompt" "" "负面提示词" "STRING"
+args.add_options "ref" "" "参考图路径" "STRING"
+args.add_options "style" "" "风格预设" "STRING"
+args.process "$@"
+local provider model output size ar count seed negative style quality
+local prompt promptfile ref
+prompt="$(args.get "-p" "--prompt")"||prompt=""
+promptfile="$(args.get "-P" "--promptfile")"||promptfile=""
+output="$(args.get "-o" "--output")"||output=""
+provider="$(args.get "--provider")"||provider=""
+model="$(args.get "-m" "--model")"||model=""
+ar="$(args.get "--ar")"||ar=""
+size="$(args.get "-s" "--size")"||size=""
+quality="$(args.get "-q" "--quality")"||quality=""
+count="$(args.get "-n" "--count")"||count="1"
+seed="$(args.get "--seed")"||seed=""
+negative="$(args.get "--negative-prompt")"||negative=""
+style="$(args.get "--style")"||style=""
+ref="$(args.get "--ref")"||ref=""
+if [[ -n $promptfile ]];then
+[[ -f $promptfile ]]||{
+log.error "Prompt file not found: $promptfile"
+return 1
+}
+local file_content
+file_content=$(<"$promptfile")
+prompt="${prompt:+$prompt }$file_content"
+fi
+[[ -z $prompt ]]&&{
+log.error "No prompt. Use -p/--prompt or -P/--promptfile"
+return 1
+}
+string.natural.check "$count"||count=1
+[[ -n $ref && -z $provider ]]&&provider="google"
+[[ -z $provider ]]&&provider="minimax"
+if ! array.contains VALID_PROVIDERS "$provider";then
+log.error "Unknown provider: $provider"
+log.error "Valid: ${VALID_PROVIDERS[*]}"
+return 1
+fi
+output=$(_resolve_output_path "$output" "$provider")
+size=$(_resolve_image_size "$size" "$ar")
+_provider_generate "$provider" "$prompt" "$output" "$model" "$size" "$count" "$seed" "$negative" "$quality" "$style" "$ref"
+}
+_provider_has_key(){
+local key_env="${PROVIDER_API_KEY_ENV[$1]}"
+[[ -n ${!key_env:-} ]]
+}
+_list_models_from_api(){
+local provider="$1"
+_init_provider_api "$provider"||return 1
+case $provider in
+openai)requests.json "$(requests.get "/v1/models")" '.data[] | select(.id | test("dall|image")) | .id'
+;;
+google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select(. | test("imagen|gemini.*image")) | sub("^models/"; "")'
+;;
+dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan[0-9]|wanx")) | .model'
+;;
+doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream|seedance")) | .'
+esac
+}
+_fmt_provider_via(){
+local p="$1"
+local xget="${PROVIDER_XGET_PREFIX[$p]:-}"
+if [[ -n $XGET_BASE_URL && -n $xget ]];then
+echo "$XGET_BASE_URL/ip/$xget"
+else
+echo "direct"
+fi
+}
+cmd_models(){
+if [[ $# -eq 0 ]];then
+printf "  %-12s %-28s %s\n" "PROVIDER" "DEFAULT MODEL" "VIA"
+printf "  %s\n" "──────────────────────────────────────────────────────────────"
+for p in "${VALID_PROVIDERS[@]}";do
+_provider_has_key "$p"||continue
+printf "  %-12s %-28s %s\n" "$p" "${PROVIDER_DEFAULT_MODEL[$p]}" "$(_fmt_provider_via "$p")"
+done
+echo ""
+echo "  Use 'models <provider>' to see all available models."
+else
+local provider="$1"
+array.contains VALID_PROVIDERS "$provider"||{
+log.error "Invalid provider: $provider"
+return 1
+}
+_provider_has_key "$provider"||{
+log.error "${PROVIDER_API_KEY_ENV[$provider]} not set"
+return 1
+}
+printf "  %s (default: %s)\n" "$provider" "${PROVIDER_DEFAULT_MODEL[$provider]}"
+printf "  %s\n" "──────────────────────────────────────────"
+local models=""
+case $provider in
+openai|google|dashscope|doubao)models=$(_list_models_from_api "$provider")||models=""
+;;
+minimax)models="${PROVIDER_MODEL_LIST[$provider]:-}"
+esac
+echo -e "$models"
+fi
+}
+main(){
+args.init "命令行文生图工具 — 支持 OpenAI, Google, DashScope, Z.AI, MiniMax, Doubao"
+args.add_options "version" "v" "显示版本信息"
+args.add_subcommand "models" "查看提供商和模型信息" "cmd_models"
+local cmd="${1:-}"
+if [[ -v _ARGS_SUBCOMMANDS[$cmd] ]];then
+local handler="${_ARGS_SUBCOMMANDS[$cmd]}"
+shift
+"$handler" "$@"
+exit $?
+fi
+for arg in "$@";do
+[[ $arg == "-h" || $arg == "--help" ]]&&{
+args.show_help
+exit 0
+}
+[[ $arg == "-v" || $arg == "--version" ]]&&{
+usage.version
+exit 0
+}
+done
+cmd_generate "$@"
+}
+if [[ ${BASH_SOURCE[0]} == "$0" ]];then
+main "$@"
+fi
