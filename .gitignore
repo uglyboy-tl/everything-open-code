@@ -16,3 +16,4 @@ tests/
 *.log
 tmp/
 /tmp
+.env

@@ -4,6 +4,9 @@
     "opencode-wakatime",
     "@tarquinen/opencode-dcp@latest"
   ],
+  "instructions": [
+    ".opencode/memory/MEMORY.md"
+  ],
   "model": "opencode/deepseek-v4-flash-free",
   "share": "disabled",
   "autoupdate": false,
@@ -14,7 +17,7 @@
       "headers": {
         "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}"
       }
-    },
+    }
   },
   "experimental": {
     "continue_loop_on_deny": true
@@ -52,6 +55,6 @@
           "name": "Claude Opus 4.6"
         }
       }
-    },
+    }
   }
 }
