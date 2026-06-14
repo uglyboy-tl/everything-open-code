@@ -1167,8 +1167,8 @@ log.error "No prompt. Use -p/--prompt or -P/--promptfile"
 return 1
 }
 string.natural.check "$count"||count=1
-[[ -n $ref && -z $provider ]]&&provider="google"
-[[ -z $provider ]]&&provider="minimax"
+[[ -n $ref && -z $provider ]]&&provider="agnes"
+[[ -z $provider ]]&&provider="agnes"
 if ! array.contains VALID_PROVIDERS "$provider";then
 log.error "Unknown provider: $provider"
 log.error "Valid: ${VALID_PROVIDERS[*]}"
