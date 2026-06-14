@@ -805,7 +805,7 @@ requests.auth(){ _REQUESTS_AUTH["Authorization"]="Basic $(jq -nr --arg c "$1:$2"
 requests.auth_bearer(){ _REQUESTS_AUTH["Authorization"]="Bearer $1";}
 VERSION="0.2.0"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
-declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao")
+declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao" "agnes")
 declare -gA PROVIDER_DEFAULT_MODEL
 PROVIDER_DEFAULT_MODEL["openai"]="gpt-image-1"
 PROVIDER_DEFAULT_MODEL["google"]="imagen-4.0-fast-generate-001"
@@ -813,11 +813,13 @@ PROVIDER_DEFAULT_MODEL["dashscope"]="qwen-image-plus"
 PROVIDER_DEFAULT_MODEL["zai"]="glm-image"
 PROVIDER_DEFAULT_MODEL["minimax"]="image-01"
 PROVIDER_DEFAULT_MODEL["doubao"]="doubao-seedream-5-0-260128"
+PROVIDER_DEFAULT_MODEL["agnes"]="agnes-image-2.1-flash"
 declare -gA PROVIDER_DEFAULT_REF_MODEL
 PROVIDER_DEFAULT_REF_MODEL["google"]="gemini-2.5-flash-image"
 PROVIDER_DEFAULT_REF_MODEL["minimax"]="image-01"
 PROVIDER_DEFAULT_REF_MODEL["dashscope"]="wan2.7-image-pro"
 PROVIDER_DEFAULT_REF_MODEL["doubao"]="doubao-seedream-5-0-260128"
+PROVIDER_DEFAULT_REF_MODEL["agnes"]="agnes-image-2.1-flash"
 declare -gA PROVIDER_API_HOST
 PROVIDER_API_HOST["openai"]="api.openai.com"
 PROVIDER_API_HOST["google"]="generativelanguage.googleapis.com"
@@ -825,6 +827,7 @@ PROVIDER_API_HOST["dashscope"]="dashscope.aliyuncs.com"
 PROVIDER_API_HOST["zai"]="api.z.ai"
 PROVIDER_API_HOST["minimax"]="api.minimaxi.com"
 PROVIDER_API_HOST["doubao"]="ark.cn-beijing.volces.com"
+PROVIDER_API_HOST["agnes"]="apihub.agnes-ai.com"
 declare -gA PROVIDER_XGET_PREFIX
 PROVIDER_XGET_PREFIX["openai"]="openai"
 PROVIDER_XGET_PREFIX["google"]="gemini"
@@ -832,6 +835,7 @@ PROVIDER_XGET_PREFIX["dashscope"]=""
 PROVIDER_XGET_PREFIX["zai"]=""
 PROVIDER_XGET_PREFIX["minimax"]=""
 PROVIDER_XGET_PREFIX["doubao"]=""
+PROVIDER_XGET_PREFIX["agnes"]=""
 declare -gA PROVIDER_API_KEY_ENV
 PROVIDER_API_KEY_ENV["openai"]="OPENAI_API_KEY"
 PROVIDER_API_KEY_ENV["google"]="GOOGLE_API_KEY"
@@ -839,6 +843,7 @@ PROVIDER_API_KEY_ENV["dashscope"]="DASHSCOPE_API_KEY"
 PROVIDER_API_KEY_ENV["zai"]="ZAI_API_KEY"
 PROVIDER_API_KEY_ENV["minimax"]="MINIMAX_API_KEY"
 PROVIDER_API_KEY_ENV["doubao"]="ARK_API_KEY"
+PROVIDER_API_KEY_ENV["agnes"]="AGNES_API_KEY"
 declare -gA ASPECT_RATIO_SIZES=(
 ["1:1"]="1024*1024"
 ["16:9"]="1792*1024"
@@ -1045,6 +1050,28 @@ body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$coun
 fi
 [[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
 [[ -n $negative ]]&&body=$(echo "$body"|jq --arg neg "$negative" '.negative_prompt = $neg')
+;;
+agnes)local sz="${size//\*/x}"
+api_path="/v1/images/generations"
+if [[ -n $ref ]];then
+local image_data
+image_data=$(_ref_build_array "$ref" '. += [("data:\($mime);base64," + $b64)]')||return 1
+body=$(echo "$image_data"|jq --arg m "$model" --arg p "$prompt" --arg s "$sz" '{
+          model: $m, prompt: $p, size: $s,
+          extra_body: {
+            image: (if length == 1 then .[0] else . end),
+            response_format: "b64_json"
+          }
+        }')
+is_base64=true
+else
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" '{
+          model: $m, prompt: $p, size: $s,
+          return_base64: true
+        }')
+is_base64=true
+fi
+[[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
 esac
 log.info "[$provider] model: $model / size: ${size:-auto} / n: $count"
 local response bodyfile
@@ -1070,7 +1097,8 @@ google)images=$(requests.json "$response" '(try .predictions[].bytesBase64Encode
 dashscope)images=$(requests.json "$response" '.output.choices[].message.content[].image // empty');;
 zai)images=$(requests.json "$response" '.data[].url // empty');;
 minimax)images=$(requests.json "$response" '.data.image_base64[] // .data.image_urls[] // empty');;
-doubao)images=$(requests.json "$response" '.data[].url // empty')
+doubao)images=$(requests.json "$response" '.data[].url // empty');;
+agnes)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty')
 esac
 [[ -z $images ]]&&{
 log.error "No images in response"
@@ -1165,6 +1193,8 @@ google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select
 dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan[0-9]|wanx")) | .model'
 ;;
 doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream|seedance")) | .'
+;;
+agnes)requests.json "$(requests.get "/v1/models")" '.data[].id | select(. | test("agnes-image")) | .'
 esac
 }
 _fmt_provider_via(){
@@ -1200,7 +1230,7 @@ printf "  %s (default: %s)\n" "$provider" "${PROVIDER_DEFAULT_MODEL[$provider]}"
 printf "  %s\n" "──────────────────────────────────────────"
 local models=""
 case $provider in
-openai|google|dashscope|doubao)models=$(_list_models_from_api "$provider")||models=""
+openai|google|dashscope|doubao|agnes)models=$(_list_models_from_api "$provider")||models=""
 ;;
 minimax)models="${PROVIDER_MODEL_LIST[$provider]:-}"
 esac
@@ -1208,7 +1238,7 @@ echo -e "$models"
 fi
 }
 main(){
-args.init "命令行文生图工具 — 支持 OpenAI, Google, DashScope, Z.AI, MiniMax, Doubao"
+args.init "命令行文生图工具 — 支持 OpenAI, Google, DashScope, Z.AI, MiniMax, Doubao, Agnes"
 args.add_options "version" "v" "显示版本信息"
 args.add_subcommand "models" "查看提供商和模型信息" "cmd_models"
 local cmd="${1:-}"
