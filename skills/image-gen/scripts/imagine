@@ -808,7 +808,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
 declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao" "agnes")
 declare -gA PROVIDER_DEFAULT_MODEL
 PROVIDER_DEFAULT_MODEL["openai"]="gpt-image-1"
-PROVIDER_DEFAULT_MODEL["google"]="imagen-4.0-fast-generate-001"
+PROVIDER_DEFAULT_MODEL["google"]="gemini-2.5-flash-image"
 PROVIDER_DEFAULT_MODEL["dashscope"]="qwen-image-plus"
 PROVIDER_DEFAULT_MODEL["zai"]="glm-image"
 PROVIDER_DEFAULT_MODEL["minimax"]="image-01"
@@ -980,11 +980,17 @@ body=$(echo "$parts"|jq --argjson n "$count" '{
           contents: [{role: "user", parts: .}],
           generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
-else
+elif [[ $model == imagen-* ]];then
 api_path="/v1beta/models/$model:predict"
 body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
           instances: [{prompt: $p}],
           parameters: {sampleCount: $n}
+        }')
+else
+api_path="/v1beta/models/$model:generateContent"
+body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
+          contents: [{role: "user", parts: [{text: $p}]}],
+          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
 fi
 is_base64=true
@@ -1035,6 +1041,15 @@ if [[ -z $size || $size == "2048*872" ]];then
 sz="2K"
 else
 sz="${size//\*/x}"
+local w="${sz%%x*}" h="${sz##*x}"
+if [[ ${w:-0} -gt 0 && ${h:-0} -gt 0 && $((w*h)) -lt 3686400 ]];then
+local k ratio_scale
+k=$(echo "sqrt(3686400 / ($w * $h))"|bc -l 2>/dev/null)||k=1
+w=$(echo "scale=0; ($w * $k) / 1 + 1"|bc)||w=2560
+h=$(echo "scale=0; ($h * $k) / 1 + 1"|bc)||h=1440
+log.debug "Doubao min px: $size → ${w}x$h"
+sz="${w}x$h"
+fi
 fi
 api_path="/api/v3/images/generations"
 if [[ -n $ref ]];then
@@ -1096,7 +1111,7 @@ openai)images=$(requests.json "$response" '.data[].b64_json // .data[].url // em
 google)images=$(requests.json "$response" '(try .predictions[].bytesBase64Encoded) // (try .candidates[].content.parts[].inlineData.data) // empty');;
 dashscope)images=$(requests.json "$response" '.output.choices[].message.content[].image // empty');;
 zai)images=$(requests.json "$response" '.data[].url // empty');;
-minimax)images=$(requests.json "$response" '.data.image_base64[] // .data.image_urls[] // empty');;
+minimax)images=$(requests.json "$response" '(try .data.image_base64[]) // (try .data.image_urls[]) // empty');;
 doubao)images=$(requests.json "$response" '.data[].url // empty');;
 agnes)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty')
 esac
@@ -1167,8 +1182,8 @@ log.error "No prompt. Use -p/--prompt or -P/--promptfile"
 return 1
 }
 string.natural.check "$count"||count=1
-[[ -n $ref && -z $provider ]]&&provider="agnes"
-[[ -z $provider ]]&&provider="agnes"
+[[ -n $ref && -z $provider ]]&&provider="doubao"
+[[ -z $provider ]]&&provider="doubao"
 if ! array.contains VALID_PROVIDERS "$provider";then
 log.error "Unknown provider: $provider"
 log.error "Valid: ${VALID_PROVIDERS[*]}"
@@ -1192,7 +1207,7 @@ google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select
 ;;
 dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan[0-9]|wanx")) | .model'
 ;;
-doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream|seedance")) | .'
+doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream")) | .'
 ;;
 agnes)requests.json "$(requests.get "/v1/models")" '.data[].id | select(. | test("agnes-image")) | .'
 esac
