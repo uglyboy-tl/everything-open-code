@@ -4,8 +4,6 @@ agent: checkpoint-writer
 subtask: true
 ---
 
-Write a checkpoint for the current session.
+SESSION_ID: !`P=$(opencode db path 2>/dev/null || echo "$HOME/.local/share/opencode/opencode.db") && sqlite3 -readonly "$P" "SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 1" 2>/dev/null || echo "new-$(date +%s)"`
 
-Review the conversation so far and write a structured state file to `.opencode/memory/sessions/<SESSION_ID>/checkpoint.md`.
-
-Also update `.opencode/memory/MEMORY.md` with any durable project-level knowledge that has emerged.
+Write a checkpoint for this session. Update checkpoint.md and MEMORY.md based on the parent session conversation (queryable from the SQLite database using the SESSION_ID above) and any entries in notes.md.
