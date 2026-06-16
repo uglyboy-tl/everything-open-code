@@ -1,7 +1,7 @@
 ---
 description: 提交当前修改
 agent: git-commiter
-model: deepseek/deepseek-v4-flash
+model: opencode-go/deepseek-v4-flash
 subtask: true
 ---
 
