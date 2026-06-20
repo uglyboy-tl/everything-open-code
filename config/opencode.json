@@ -32,6 +32,9 @@
     "external_directory": {
       "$HOME/Code/**": "allow",
       "/tmp/**": "allow"
+    },
+    "skill": {
+      "anysearch": "deny"
     }
   },
   "provider": {
