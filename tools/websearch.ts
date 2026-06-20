@@ -2,8 +2,9 @@ import { tool } from "@opencode-ai/plugin"
 import { $ } from "bun"
 import path from "path"
 
+const homeDir = process.env.HOME || ""
 const script = path.join(
-  "/home/uglyboy/.local/share/dotfiles/config/opencode/skills/anysearch/scripts",
+  homeDir, ".config", "opencode", "skills", "anysearch", "scripts",
   "anysearch_cli.sh",
 )
 
