@@ -1,4 +1,5 @@
 ---
+description: 负责需求分析和方案设计，不执行代码变更
 mode: primary
 temperature: 0.8
 color: "#FF5722"
