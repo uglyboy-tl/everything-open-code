@@ -772,31 +772,6 @@ echo "$query"
 }
 requests.get(){ requests.request "GET" "$1$(requests.query.build "${@:2}")" "" "";}
 requests.post(){ requests.request "POST" "$1" "$2" "${3:-}";}
-requests.multipart_post(){
-local url="$1"
-shift
-requests.curl.check
-requests.jq.check
-local curl_cmd=("$_REQUESTS_CURL" "-s" "--compressed" "-X" "POST")
-curl_cmd+=("${_REQUESTS_CURL_EXTRA[@]}")
-requests.curl.configure curl_cmd "$_REQUESTS_TIMEOUT"
-local field
-for field in "$@";do
-curl_cmd+=("-F" "$field")
-done
-local full_url="$url"
-[[ -n $_REQUESTS_BASE_URL ]]&&full_url="$_REQUESTS_BASE_URL$url"
-curl_cmd+=("$full_url")
-local temp_body="$(fs.mktemp)"||return 1
-local temp_headers="$(fs.mktemp)"||return 1
-trap 'rm -f "${temp_body:-}" "${temp_headers:-}"' EXIT
-local status_code=$("${curl_cmd[@]}" -w "%{http_code}" -D "$temp_headers" -o "$temp_body" 2>/dev/null)
-local body_base64="$(string.base64.encode "$temp_body")"
-local headers_json="$("$_REQUESTS_JQ" -Rs 'split("\n") | map(select(length > 0 and test(":"))) | map(split(": ") | {(.[0]): .[1] | rtrimstr("\r")}) | add // {}' "$temp_headers")"
-local success="false"
-[[ $status_code =~ ^2[0-9][0-9]$ ]]&&success="true"
-echo "{\"status_code\":$status_code,\"headers\":$headers_json,\"body\":\"$body_base64\",\"success\":$success}"
-}
 requests.put(){ requests.request "PUT" "$1" "$2" "${3:-}";}
 requests.delete(){ requests.request "DELETE" "$1" "" "";}
 requests.patch(){ requests.request "PATCH" "$1" "$2" "${3:-}";}
@@ -830,16 +805,15 @@ requests.auth(){ _REQUESTS_AUTH["Authorization"]="Basic $(jq -nr --arg c "$1:$2"
 requests.auth_bearer(){ _REQUESTS_AUTH["Authorization"]="Bearer $1";}
 VERSION="0.2.0"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
-declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao" "agnes" "cloudflare")
+declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao" "agnes")
 declare -gA PROVIDER_DEFAULT_MODEL
 PROVIDER_DEFAULT_MODEL["openai"]="gpt-image-1"
-PROVIDER_DEFAULT_MODEL["google"]="gemini-2.5-flash-image"
+PROVIDER_DEFAULT_MODEL["google"]="imagen-4.0-fast-generate-001"
 PROVIDER_DEFAULT_MODEL["dashscope"]="qwen-image-plus"
 PROVIDER_DEFAULT_MODEL["zai"]="glm-image"
 PROVIDER_DEFAULT_MODEL["minimax"]="image-01"
 PROVIDER_DEFAULT_MODEL["doubao"]="doubao-seedream-5-0-260128"
 PROVIDER_DEFAULT_MODEL["agnes"]="agnes-image-2.1-flash"
-PROVIDER_DEFAULT_MODEL["cloudflare"]="@cf/black-forest-labs/flux-1-schnell"
 declare -gA PROVIDER_DEFAULT_REF_MODEL
 PROVIDER_DEFAULT_REF_MODEL["google"]="gemini-2.5-flash-image"
 PROVIDER_DEFAULT_REF_MODEL["minimax"]="image-01"
@@ -854,7 +828,6 @@ PROVIDER_API_HOST["zai"]="api.z.ai"
 PROVIDER_API_HOST["minimax"]="api.minimaxi.com"
 PROVIDER_API_HOST["doubao"]="ark.cn-beijing.volces.com"
 PROVIDER_API_HOST["agnes"]="apihub.agnes-ai.com"
-PROVIDER_API_HOST["cloudflare"]="api.cloudflare.com"
 declare -gA PROVIDER_XGET_PREFIX
 PROVIDER_XGET_PREFIX["openai"]="openai"
 PROVIDER_XGET_PREFIX["google"]="gemini"
@@ -863,7 +836,6 @@ PROVIDER_XGET_PREFIX["zai"]=""
 PROVIDER_XGET_PREFIX["minimax"]=""
 PROVIDER_XGET_PREFIX["doubao"]=""
 PROVIDER_XGET_PREFIX["agnes"]=""
-PROVIDER_XGET_PREFIX["cloudflare"]=""
 declare -gA PROVIDER_API_KEY_ENV
 PROVIDER_API_KEY_ENV["openai"]="OPENAI_API_KEY"
 PROVIDER_API_KEY_ENV["google"]="GOOGLE_API_KEY"
@@ -872,7 +844,6 @@ PROVIDER_API_KEY_ENV["zai"]="ZAI_API_KEY"
 PROVIDER_API_KEY_ENV["minimax"]="MINIMAX_API_KEY"
 PROVIDER_API_KEY_ENV["doubao"]="ARK_API_KEY"
 PROVIDER_API_KEY_ENV["agnes"]="AGNES_API_KEY"
-PROVIDER_API_KEY_ENV["cloudflare"]="CLOUDFLARE_API_TOKEN"
 declare -gA ASPECT_RATIO_SIZES=(
 ["1:1"]="1024*1024"
 ["16:9"]="1792*1024"
@@ -909,18 +880,9 @@ local xget_base="${XGET_BASE_URL:-}"
 local xget_prefix="${PROVIDER_XGET_PREFIX[$provider]:-}"
 if [[ -n $xget_base && -n $xget_prefix ]];then
 echo "$xget_base/ip/$xget_prefix"
-return
-fi
-if [[ $provider == "cloudflare" ]];then
-local acct="${CLOUDFLARE_ACCOUNT_ID:-}"
-[[ -n $acct ]]||{
-log.error "CLOUDFLARE_ACCOUNT_ID not set - add to .env or export it"
-return 1
-}
-echo "https://api.cloudflare.com/client/v4/accounts/$acct"
-return
-fi
+else
 echo "https://${PROVIDER_API_HOST[$provider]}"
+fi
 }
 _init_provider_api(){
 local provider="$1"
@@ -1018,17 +980,11 @@ body=$(echo "$parts"|jq --argjson n "$count" '{
           contents: [{role: "user", parts: .}],
           generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
-elif [[ $model == imagen-* ]];then
+else
 api_path="/v1beta/models/$model:predict"
 body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
           instances: [{prompt: $p}],
           parameters: {sampleCount: $n}
-        }')
-else
-api_path="/v1beta/models/$model:generateContent"
-body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
-          contents: [{role: "user", parts: [{text: $p}]}],
-          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
 fi
 is_base64=true
@@ -1079,15 +1035,6 @@ if [[ -z $size || $size == "2048*872" ]];then
 sz="2K"
 else
 sz="${size//\*/x}"
-local w="${sz%%x*}" h="${sz##*x}"
-if [[ ${w:-0} -gt 0 && ${h:-0} -gt 0 && $((w*h)) -lt 3686400 ]];then
-local k ratio_scale
-k=$(echo "sqrt(3686400 / ($w * $h))"|bc -l 2>/dev/null)||k=1
-w=$(echo "scale=0; ($w * $k) / 1 + 1"|bc)||w=2560
-h=$(echo "scale=0; ($h * $k) / 1 + 1"|bc)||h=1440
-log.debug "Doubao min px: $size → ${w}x$h"
-sz="${w}x$h"
-fi
 fi
 api_path="/api/v3/images/generations"
 if [[ -n $ref ]];then
@@ -1125,12 +1072,6 @@ body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" '{
 is_base64=true
 fi
 [[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
-;;
-cloudflare)api_path="/ai/run/$model"
-body=$(jq -n --arg p "$prompt" '{prompt: $p}')
-[[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
-count=1
-is_base64=true
 esac
 log.info "[$provider] model: $model / size: ${size:-auto} / n: $count"
 local response bodyfile
@@ -1155,10 +1096,9 @@ openai)images=$(requests.json "$response" '.data[].b64_json // .data[].url // em
 google)images=$(requests.json "$response" '(try .predictions[].bytesBase64Encoded) // (try .candidates[].content.parts[].inlineData.data) // empty');;
 dashscope)images=$(requests.json "$response" '.output.choices[].message.content[].image // empty');;
 zai)images=$(requests.json "$response" '.data[].url // empty');;
-minimax)images=$(requests.json "$response" '(try .data.image_base64[]) // (try .data.image_urls[]) // empty');;
+minimax)images=$(requests.json "$response" '.data.image_base64[] // .data.image_urls[] // empty');;
 doubao)images=$(requests.json "$response" '.data[].url // empty');;
-agnes)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty');;
-cloudflare)images=$(requests.json "$response" '.result.image // empty')
+agnes)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty')
 esac
 [[ -z $images ]]&&{
 log.error "No images in response"
@@ -1227,8 +1167,8 @@ log.error "No prompt. Use -p/--prompt or -P/--promptfile"
 return 1
 }
 string.natural.check "$count"||count=1
-[[ -n $ref && -z $provider ]]&&provider="doubao"
-[[ -z $provider ]]&&provider="doubao"
+[[ -n $ref && -z $provider ]]&&provider="google"
+[[ -z $provider ]]&&provider="minimax"
 if ! array.contains VALID_PROVIDERS "$provider";then
 log.error "Unknown provider: $provider"
 log.error "Valid: ${VALID_PROVIDERS[*]}"
@@ -1252,11 +1192,9 @@ google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select
 ;;
 dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan[0-9]|wanx")) | .model'
 ;;
-doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream")) | .'
+doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream|seedance")) | .'
 ;;
 agnes)requests.json "$(requests.get "/v1/models")" '.data[].id | select(. | test("agnes-image")) | .'
-;;
-cloudflare)requests.json "$(requests.get "/ai/models/search")" '.result.models[] // empty | .id | select(. | test("flux|stable-diffusion|dreamshaper"))'
 esac
 }
 _fmt_provider_via(){
@@ -1292,7 +1230,7 @@ printf "  %s (default: %s)\n" "$provider" "${PROVIDER_DEFAULT_MODEL[$provider]}"
 printf "  %s\n" "──────────────────────────────────────────"
 local models=""
 case $provider in
-openai|google|dashscope|doubao|agnes|cloudflare)models=$(_list_models_from_api "$provider")||models=""
+openai|google|dashscope|doubao|agnes)models=$(_list_models_from_api "$provider")||models=""
 ;;
 minimax)models="${PROVIDER_MODEL_LIST[$provider]:-}"
 esac
@@ -1300,7 +1238,7 @@ echo -e "$models"
 fi
 }
 main(){
-args.init "命令行文生图工具 — 支持 OpenAI, Google, DashScope, Z.AI, MiniMax, Doubao, Agnes, Cloudflare"
+args.init "命令行文生图工具 — 支持 OpenAI, Google, DashScope, Z.AI, MiniMax, Doubao, Agnes"
 args.add_options "version" "v" "显示版本信息"
 args.add_subcommand "models" "查看提供商和模型信息" "cmd_models"
 local cmd="${1:-}"
