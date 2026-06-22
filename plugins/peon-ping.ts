@@ -53,10 +53,13 @@ function findPeonSh(): string | null {
 }
 
 function setTabTitle(title: string): void {
+  if (!process.stdout.isTTY) return
   process.stdout.write(`\x1b]0;${title}\x07`)
 }
 
 export const PeonPingPlugin: Plugin = async ({ directory }) => {
+  if (!process.stdout.isTTY) return {}
+
   const projectName = path.basename(directory || process.cwd()) || "opencode"
   const peonSh = findPeonSh()
 
