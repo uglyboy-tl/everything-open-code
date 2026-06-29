@@ -1,3 +1,0 @@
-[submodule "skills/anysearch"]
-	path = skills/anysearch
-	url = git@github.com:anysearch-ai/anysearch-skill.git
