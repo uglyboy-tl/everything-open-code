@@ -9,7 +9,7 @@ description: AI image generation via bash script. Use when user asks to generate
 
 > **脚本**: `{baseDir}/scripts/imagine`
 > **默认**: `doubao`（不传 `--provider` 即为默认；若传了 `--ref` 则自动切换为 `doubao`）
-> **环境变量**: 从当前环境读取（`set -a; source scripts/.env; set +a` 或 `export` 均可）
+> **环境变量**: 从当前环境读取（脚本自动加载 `scripts/.env`，或手动 `export`）
 
 ---
 
@@ -86,7 +86,7 @@ bash {baseDir}/scripts/imagine -p "不同的配色方案" -o variants.png --ref 
 
 ## 环境变量
 
-> 配置可集中存放于 `{baseDir}/scripts/.env`（已在 `.gitignore` 中），运行前执行 `set -a; source {baseDir}/scripts/.env; set +a`；或直接在 shell 中 `export`
+> 配置可集中存放于 `{baseDir}/scripts/.env`（已在 `.gitignore` 中，脚本自动加载），或直接在 shell 中 `export`
 
 | 变量 | 对应提供商 |
 |------|-----------|
@@ -108,7 +108,7 @@ bash {baseDir}/scripts/imagine -p "不同的配色方案" -o variants.png --ref 
 ```
 ERROR: DASHSCOPE_API_KEY not set - add to .env or export it
 ```
-→ 编辑 `{baseDir}/scripts/.env` 后 `source` 重试，或直接 `export <变量>=<值>` 后重试。
+→ 编辑 `{baseDir}/scripts/.env` 后重试，或直接 `export <变量>=<值>` 后重试。
 
 **生成失败:**
 1. 尝试同提供商的其他模型（如 `qwen-image-plus` → `wanx`）

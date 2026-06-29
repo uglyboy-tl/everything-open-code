@@ -512,7 +512,8 @@ return 0
 }
 args.verify(){
 for option in "${_ARGS_OPTS[@]}";do
-local opt="${option##*-}" another
+local opt="${option#--}" another
+opt="${opt#-}"
 array.contains _ARGS_OPTIONS "$opt"||{
 log.error "未知选项: \"$option\""
 return 1
@@ -655,13 +656,14 @@ requests.jq.check(){
 requests.curl.configure(){
 local array_name="$1"
 local timeout="${2:-}"
+local include_auth="${3:-true}"
 [[ -n $timeout ]]&&array.append "$array_name" "--max-time" "$timeout"
 array.append "$array_name" "-A" "$_REQUESTS_USER_AGENT"
 local key
 for key in "${!_REQUESTS_HEADERS[@]}";do
 array.append "$array_name" "-H" "$key: ${_REQUESTS_HEADERS[$key]}"
 done
-if [[ ${#_REQUESTS_AUTH[@]} -gt 0 ]];then
+if [[ $include_auth == "true" && ${#_REQUESTS_AUTH[@]} -gt 0 ]];then
 local auth_key
 for auth_key in "${!_REQUESTS_AUTH[@]}";do
 array.append "$array_name" "-H" "$auth_key: ${_REQUESTS_AUTH[$auth_key]}"
@@ -706,8 +708,8 @@ echo "{\"status_code\":$status_code,\"headers\":$headers_json,\"body\":\"$body_b
 }
 requests.download(){
 requests.curl.check
-local curl_cmd=("$_REQUESTS_CURL" "-L")
-requests.curl.configure curl_cmd
+local curl_cmd=("$_REQUESTS_CURL" "-L" "--globoff")
+requests.curl.configure curl_cmd "" false
 curl_cmd+=("-o" "$2")
 [[ ${3:-true} == "true" ]]&&curl_cmd+=("--progress-bar")
 [[ ${4:-true} == "true" ]]&&curl_cmd+=("-C" "-")
@@ -805,10 +807,11 @@ requests.auth(){ _REQUESTS_AUTH["Authorization"]="Basic $(jq -nr --arg c "$1:$2"
 requests.auth_bearer(){ _REQUESTS_AUTH["Authorization"]="Bearer $1";}
 VERSION="0.2.0"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."&&pwd)"
+.env
 declare -ga VALID_PROVIDERS=("openai" "google" "dashscope" "zai" "minimax" "doubao" "agnes")
 declare -gA PROVIDER_DEFAULT_MODEL
 PROVIDER_DEFAULT_MODEL["openai"]="gpt-image-1"
-PROVIDER_DEFAULT_MODEL["google"]="imagen-4.0-fast-generate-001"
+PROVIDER_DEFAULT_MODEL["google"]="gemini-2.5-flash-image"
 PROVIDER_DEFAULT_MODEL["dashscope"]="qwen-image-plus"
 PROVIDER_DEFAULT_MODEL["zai"]="glm-image"
 PROVIDER_DEFAULT_MODEL["minimax"]="image-01"
@@ -914,7 +917,7 @@ fi
 log.info "Downloading image $((i+1))..."
 requests.download "$url" "$outfile"
 log.info "Saved: $outfile"
-((i++))
+((++i))
 done <<<"$urls"
 }
 _get_mime_type(){
@@ -969,39 +972,57 @@ body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$coun
 [[ -n $style ]]&&body=$(echo "$body"|jq --arg s "$style" '.style = $s')
 [[ $model != "dall-e-3" && $model != "dall-e-2" ]]&&is_base64=true
 ;;
-google)if
-[[ -n $ref ]]
-then
+google)local aspect_ratio="1:1"
+if [[ -n $size ]];then
+local ar_key
+for ar_key in "${!ASPECT_RATIO_SIZES[@]}";do
+[[ ${ASPECT_RATIO_SIZES[$ar_key]} == "$size" ]]&&{
+aspect_ratio="$ar_key"
+break
+}
+done
+if [[ $aspect_ratio == "1:1" && $size != "1024*1024" ]];then
+local sw sh
+sw="${size%%\**}" sh="${size#*\*}"
+local sr=$(((sw*100)/sh))
+case $sr in
+133)aspect_ratio="4:3";;75)aspect_ratio="3:4";;
+175|177|178)aspect_ratio="16:9";;57)aspect_ratio="9:16"
+esac
+fi
+fi
+if [[ -n $ref ]];then
 local parts
 parts=$(_ref_build_array "$ref" '. += [{inlineData: {mimeType: $mime, data: $b64}}]')||return 1
 parts=$(echo "$parts"|jq --arg p "$prompt" '. += [{text: $p}]')
 api_path="/v1beta/models/$model:generateContent"
-body=$(echo "$parts"|jq --argjson n "$count" '{
+body=$(echo "$parts"|jq --arg ar "$aspect_ratio" --argjson n "$count" '{
           contents: [{role: "user", parts: .}],
-          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {imageSize: (if $n > 1 then "1K" else "2K" end)}}
+          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {aspectRatio: $ar, imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
 else
-api_path="/v1beta/models/$model:predict"
-body=$(jq -n --arg p "$prompt" --argjson n "$count" '{
-          instances: [{prompt: $p}],
-          parameters: {sampleCount: $n}
+api_path="/v1beta/models/$model:generateContent"
+body=$(jq -n --arg p "$prompt" --arg ar "$aspect_ratio" --argjson n "$count" '{
+          contents: [{role: "user", parts: [{text: $p}]}],
+          generationConfig: {responseModalities: ["IMAGE"], imageConfig: {aspectRatio: $ar, imageSize: (if $n > 1 then "1K" else "2K" end)}}
         }')
 fi
 is_base64=true
 ;;
 dashscope)api_path="/api/v1/services/aigc/multimodal-generation/generation"
+local sz="${size//\*/x}"
 if [[ -n $ref ]];then
 local content
 content=$(_ref_build_array "$ref" '. += [{image: ("data:\($mime);base64," + $b64)}]')||return 1
 content=$(echo "$content"|jq --arg p "$prompt" '. += [{text: $p}]')
-body=$(echo "$content"|jq --arg m "$model" --arg s "$size" '{
+body=$(echo "$content"|jq --arg m "$model" --arg s "$sz" '{
           model: $m,
           input: { messages: [{ role: "user", content: . }] },
           parameters: { size: $s, n: 1, watermark: false }
         }')
 count=1
 else
-body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$size" --argjson n "$count" '{
+body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" --argjson n "$count" '{
           model: $m,
           input: { messages: [{ role: "user", content: [{ text: $p }] }] },
           parameters: { size: $s, n: $n, prompt_extend: true, watermark: false }
@@ -1019,22 +1040,35 @@ log.warn "MiniMax supports at most 9 images per request, capping count=9"
 count=9
 }
 api_path="/v1/image_generation"
+local mini_w="${size%%\**}" mini_h="${size#*\*}"
 if [[ -n $ref ]];then
 local sr
 sr=$(_ref_build_array "$ref" '. += [{type: "character", image_file: ("data:\($mime);base64," + $b64)}]')||return 1
-body=$(echo "$sr"|jq --arg m "$model" --arg p "$prompt" --argjson n "$count" '{
-          model: $m, prompt: $p, n: $n, response_format: "base64", subject_reference: .
+body=$(echo "$sr"|jq --arg m "$model" --arg p "$prompt" --argjson n "$count" --argjson w "$mini_w" --argjson h "$mini_h" '{
+          model: $m, prompt: $p, n: $n, width: $w, height: $h,
+          response_format: "base64", subject_reference: .
         }')
 is_base64=true
 else
-body=$(jq -n --arg m "$model" --arg p "$prompt" --argjson n "$count" '{model: $m, prompt: $p, n: $n}')
+body=$(jq -n --arg m "$model" --arg p "$prompt" --argjson n "$count" --argjson w "$mini_w" --argjson h "$mini_h" '{
+          model: $m, prompt: $p, n: $n, width: $w, height: $h
+        }')
 fi
+[[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
 ;;
-doubao)local sz
+doubao)local min_pixels=3686400
+local sz w h
 if [[ -z $size || $size == "2048*872" ]];then
 sz="2K"
 else
+w="${size%%\**}" h="${size#*\*}"
+if [[ $((w*h)) -lt $min_pixels ]];then
+local s=1
+while [[ $((w*s*h*s)) -lt $min_pixels ]];do ((s++));done
+sz="$((w*s))x$((h*s))"
+else
 sz="${size//\*/x}"
+fi
 fi
 api_path="/api/v3/images/generations"
 if [[ -n $ref ]];then
@@ -1066,10 +1100,9 @@ body=$(echo "$image_data"|jq --arg m "$model" --arg p "$prompt" --arg s "$sz" '{
 is_base64=true
 else
 body=$(jq -n --arg m "$model" --arg p "$prompt" --arg s "$sz" '{
-          model: $m, prompt: $p, size: $s,
-          return_base64: true
+          model: $m, prompt: $p, size: $s
         }')
-is_base64=true
+is_base64=false
 fi
 [[ -n $seed ]]&&body=$(echo "$body"|jq --argjson seed "$seed" '.seed = $seed')
 esac
@@ -1093,10 +1126,10 @@ fi
 local images
 case $provider in
 openai)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty');;
-google)images=$(requests.json "$response" '(try .predictions[].bytesBase64Encoded) // (try .candidates[].content.parts[].inlineData.data) // empty');;
+google)images=$(requests.json "$response" '(try .candidates[].content.parts[].inlineData.data) // empty');;
 dashscope)images=$(requests.json "$response" '.output.choices[].message.content[].image // empty');;
 zai)images=$(requests.json "$response" '.data[].url // empty');;
-minimax)images=$(requests.json "$response" '.data.image_base64[] // .data.image_urls[] // empty');;
+minimax)images=$(requests.json "$response" '(try .data.image_base64[] catch empty) // (try .data.image_urls[] catch empty) // empty');;
 doubao)images=$(requests.json "$response" '.data[].url // empty');;
 agnes)images=$(requests.json "$response" '.data[].b64_json // .data[].url // empty')
 esac
@@ -1116,7 +1149,7 @@ fi
 log.info "Decoding image $((i+1))..."
 echo "$b64"|string.base64.decode >"$outfile"
 log.info "Saved: $outfile"
-((i++))
+((++i))
 done <<<"$images"
 else
 _download_images "$images" "$output"
@@ -1188,11 +1221,11 @@ _init_provider_api "$provider"||return 1
 case $provider in
 openai)requests.json "$(requests.get "/v1/models")" '.data[] | select(.id | test("dall|image")) | .id'
 ;;
-google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select(. | test("imagen|gemini.*image")) | sub("^models/"; "")'
+google)requests.json "$(requests.get "/v1beta/models")" '.models[].name | select(. | test("gemini.*image")) | sub("^models/"; "")'
 ;;
-dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan[0-9]|wanx")) | .model'
+dashscope)requests.json "$(requests.get "/api/v1/models?page_no=1&page_size=200")" '.output.models[] | select(.model | test("qwen-image|wan.*image|wan.*t2i|wanx.*t2i")) | .model'
 ;;
-doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream|seedance")) | .'
+doubao)requests.json "$(requests.get "/api/v3/models")" '.data[].id | select(. | test("seedream")) | .'
 ;;
 agnes)requests.json "$(requests.get "/v1/models")" '.data[].id | select(. | test("agnes-image")) | .'
 esac
