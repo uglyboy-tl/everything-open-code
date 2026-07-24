@@ -16,8 +16,10 @@ permission:
     "rtk git *": allow
     "head": allow
     "tail": allow
-    "gh *": allow
-    "rtk gh *": allow
+    "gh repo *": allow
+    "gh release *": allow
+    "rtk gh repo *": allow
+    "rtk gh release *": allow
   webfetch: allow
   websearch: allow
   external_directory:
