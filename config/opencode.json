@@ -2,10 +2,12 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "opencode-wakatime",
-    "@tarquinen/opencode-dcp@latest"
+    "@tarquinen/opencode-dcp@latest",
+    "context-mode"
   ],
   "instructions": [
-    ".opencode/memory/MEMORY.md"
+    ".opencode/memory/MEMORY.md",
+    "~/.cache/opencode/packages/context-mode@latest/node_modules/context-mode/configs/opencode/AGENTS.md"
   ],
   "model": "opencode/deepseek-v4-flash-free",
   "share": "disabled",
