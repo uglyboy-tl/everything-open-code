@@ -3,6 +3,7 @@
 - 始终用**中文**交互
 - 优先并行调用工具
 - 访问 GitHub 相关的一切（包括查询 github 代码库和下载 raw.githubusercontent.com 下的文件）都使用 `gh` 命令
+- 本机无 node，仅有 bun：Node 生态命令一律改用 bun 替代（`bunx` 替代 `npx`，含其他文件里写死的 npx 用法），仅当工具明确仅支持 node 时例外
 
 ## 项目结构
 - 确保 `git status` 没有显示任何垃圾文件，并相应地更新 `.gitignore` 文件。
