@@ -5,8 +5,7 @@
     "@tarquinen/opencode-dcp@latest"
   ],
   "instructions": [
-    ".opencode/memory/MEMORY.md",
-    "~/.cache/opencode/packages/context-mode@latest/node_modules/context-mode/configs/opencode/AGENTS.md"
+    ".opencode/memory/MEMORY.md"
   ],
   "model": "opencode/deepseek-v4-flash-free",
   "share": "disabled",
@@ -17,6 +16,21 @@
       "url": "https://mcp.context7.com/mcp",
       "headers": {
         "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}"
+      }
+    },
+    "minimax": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "minimax-mcp",
+        "-y"
+      ],
+      "enabled": true,
+      "environment": {
+        "MINIMAX_API_KEY": "{env:MINIMAX_API_KEY}",
+        "MINIMAX_API_HOST": "https://api.minimaxi.com",
+        "MINIMAX_MCP_BASE_PATH": "/home/uglyboy/Downloads/Sounds",
+        "MINIMAX_API_RESOURCE_MODE": "local"
       }
     }
   },
